@@ -62,13 +62,11 @@ class memoMAE(MaskedAutoencoderViT):
         )
         sim_patch_embeds = self.memory_bank.recollect(x_masked, k_sim_patches) # (B, M, K, D)
         x_masked = x_masked + pos_embed_kept
-        x_masked = torch.cat([x_masked.unsqueeze(2), sim_patch_embeds], dim=2).reshape(B, -1, D) # (B, M*(K+1), D)
         cls_token = self.cls_token + self.pos_embed[:, :1, :]   # (1, 1, D)
         cls_tokens = cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x_masked), dim=1)   # (B, 1+M*(K+1), D)
+        x = torch.cat((cls_tokens, x_masked), dim=1)   # (B, 1+N, D)
         for blk in self.blocks:
-            x = blk(x)
-        x = torch.cat([x[:, :1, :], x[:, 1:, :][:, ::6, :]], dim=1)
+            x = blk(x, sim_patch_embeds)
         x = self.norm(x)
         return x, mask, ids_restore
 
