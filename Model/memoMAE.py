@@ -7,6 +7,9 @@ from .Module.asymAttention import AsymAttention
 
 
 class memoMAE(MaskedAutoencoderViT):
+    '''
+    Memoized Masked Autoencoder with Asymmetric Attention
+    '''
     def __init__(self, config):
         super().__init__(img_size=config.mae.img_size,
                          patch_size=config.mae.patch_size,
@@ -36,6 +39,17 @@ class memoMAE(MaskedAutoencoderViT):
         #                 )
     
     def forward_encoder(self, x, mask_ratio=0.75, k_sim_patches=5):
+        '''
+        Forward function of encoder.
+        Args:
+            x: input features with shape (B, N, D)
+            mask_ratio: masking ratio
+            k_sim_patches: number of similar patches to retrieve from memory bank
+        Returns:
+            latent features with shape (B, M, D)
+            mask: mask indicating which patches are masked
+            ids_restore: indices to restore original ordering
+        '''
         x_masked, mask, ids_restore = self.random_masking(x, mask_ratio) # (B, M, D)
         B, N, D = x.shape
         M = x_masked.shape[1]
@@ -59,6 +73,18 @@ class memoMAE(MaskedAutoencoderViT):
         return x, mask, ids_restore
 
     def forward(self, imgs, memo_ratio=0.5, mask_ratio=0.75, k_sim_patches=5):
+        '''
+        Forward function.
+        Args:
+            imgs: input images with shape (B, 3, H, W)
+            memo_ratio: ratio of patches to memorize
+            mask_ratio: masking ratio
+            k_sim_patches: number of similar patches to retrieve from memory bank
+        Returns:
+            loss: reconstruction loss
+            pred: predicted pixel values for masked patches
+            mask: mask indicating which patches are masked
+        '''
         x = self.patch_embed(imgs) # (B, N, D)
         self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
         latents, mask, ids_restore = self.forward_encoder(x, mask_ratio, k_sim_patches) # (B, M, D)

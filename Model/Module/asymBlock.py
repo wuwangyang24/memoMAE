@@ -4,6 +4,9 @@ from asymAttention import AsymAttention
 
 
 class AsymBlock(nn.Module):
+    '''
+    Asymmetric Transformer Block
+    '''
     def __init__(
         self,
         dim,
@@ -41,6 +44,16 @@ class AsymBlock(nn.Module):
         )
 
     def forward(self, x, sim_embeddings, return_attn: bool = False):
+        '''
+        Forward function.
+        Args:
+            x: input features with shape (B, N, D)
+            sim_embeddings: similar embeddings with shape (B, N, K, D)
+            return_attn: whether to return attention weights
+        Returns:
+            output features with shape (B, N, D)
+            (optional) attention weights with shape (B, num_heads, N, N+K)
+        '''
         if return_attn:
             x, attn = self.attn(self.norm1(x), self.norm1(sim_embeddings), return_attn=True)
             x = x + self.drop_path(x)

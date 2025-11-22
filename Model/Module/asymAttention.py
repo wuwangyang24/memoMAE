@@ -3,6 +3,9 @@ import torch.nn as nn
 
 
 class AsymAttention(nn.Module):
+    '''
+    Asymmetric Multi-Head Self-Attention Module
+    '''
     def __init__(
             self,
             dim=768,
@@ -24,9 +27,18 @@ class AsymAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, attn_mask=None):
-        B, NK, D = x.shape
-
+    def forward(self, x, sim_embeddings, attn_mask=None, return_attn: bool = False):
+        '''
+        Forward function.
+        Args:
+            x: input features with shape (B, N, D)
+            sim_embeddings: similar embeddings with shape (B, N, K, D)
+            attn_mask: attention mask
+        Returns:
+            output features with shape (B, N, D)
+        '''
+        B, N, D = x.shape
+        B, _, K, _ = sim_embeddings.shape
         # q: (B, N, D) → (B, #heads, N, head_dim)
         # kv: (B, NK, 2*D) → (2, B, #heads, NK, head_dim)
         q = (
@@ -40,13 +52,10 @@ class AsymAttention(nn.Module):
             .permute(2, 0, 3, 1, 4)
         )
         k, v = kv[0], kv[1]
-
         # scaled dot-product attention
         attn = (q @ k.transpose(-2, -1)) * self.scale     # (B, heads, N, M)
-        print(attn.shape)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
-
         # attention output
         x = attn @ v                                      # (B, heads, N, head_dim)
         # merge heads: (B, N, D)
@@ -54,7 +63,8 @@ class AsymAttention(nn.Module):
             x.transpose(1, 2)
              .reshape(B, -1, D)
         )
-
         x = self.proj(x)
         x = self.proj_drop(x)
+        if return_attn:
+            return x, attn
         return x
