@@ -18,11 +18,9 @@ class AsymAttention(nn.Module):
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
-
         # q and kv projection
         self.q = nn.Linear(dim, dim, bias=qkv_bias)
         self.kv = nn.Linear(dim, dim * 2, bias=qkv_bias)
-
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
@@ -32,28 +30,28 @@ class AsymAttention(nn.Module):
         Forward function.
         Args:
             x: input features with shape (B, N, D)
-            sim_embeddings: similar embeddings with shape (B, N, K, D)
+            sim_embeddings: similar embeddings with shape (B, N, M, D)
             attn_mask: attention mask
         Returns:
             output features with shape (B, N, D)
         '''
         B, N, D = x.shape
-        B, _, K, _ = sim_embeddings.shape
+        _, _, M, _ = sim_embeddings.shape
         # q: (B, N, D) → (B, #heads, N, head_dim)
         # kv: (B, NK, 2*D) → (2, B, #heads, NK, head_dim)
         q = (
-            self.q(torch.cat([x[:, :1, :], x[:, 1:, :][:, ::6, :]], dim=1))
+            self.q(x)
             .reshape(B, -1, self.num_heads, D // self.num_heads)
             .permute(0, 2, 1, 3)
         )
         kv = (
-            self.kv(x.view(B, NK, D))
-            .reshape(B, NK, 2, self.num_heads, D // self.num_heads)
+            self.kv(torch.cat([x.unsqueeze(1).expand(-1, N, -1, -1)), sim_embeddings], dim=2))
+            .reshape(B, -1, 2, self.num_heads, D // self.num_heads)
             .permute(2, 0, 3, 1, 4)
         )
         k, v = kv[0], kv[1]
         # scaled dot-product attention
-        attn = (q @ k.transpose(-2, -1)) * self.scale     # (B, heads, N, M)
+        attn = (q @ k.transpose(-2, -1)) * self.scale     # (B, heads, N, N+M)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
         # attention output
