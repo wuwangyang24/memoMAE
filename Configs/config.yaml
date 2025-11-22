@@ -1,0 +1,59 @@
+data:
+  train: 'Data/train.txt'
+  val: 'Data/val.txt'
+
+mae:
+  img_size: 224, 
+  patch_size: 16, 
+  in_chans: 3,
+  embed_dim: 1024, 
+  depth: 12, 
+  num_heads: 12,
+  decoder_embed_dim: 512, 
+  decoder_depth: 8, 
+  decoder_num_heads: 16,
+  mlp_ratio: 4.,
+  norm_pix_loss: False
+  return_attention: true
+
+memory_bank:
+  memory_capacity: 10000
+  embed_dim: 768
+  memory_device: "cuda"
+
+hyperparameters:
+  context_ratio: 0.5
+  memory_mode: "random"
+  num_neighbors: 5
+
+training:
+  loss_type: "mae"
+  batch_size: 32
+  max_epochs: 10
+  val_every_epochs: 1
+  accumulate_grad_batches: 4
+
+optimizer:
+  optim: "adamw"
+  learning_rate: 5e-4
+  beta1: 0.9
+  beta2: 0.999
+  eta_min: 1e-5
+  weight_decay: 0.05
+  lr_scheduler: "cosine"
+  warmup_epochs: 10
+  start_factor: 0.1
+
+checkpoint:
+  save_every_epochs: 50
+  save_dir: "checkpoints/memojepa"
+
+logging:    
+  project: 'memojepa'
+  entity: 'wwy'
+  log_every_epochs: 1
+  logger: 'wandb'
+
+name: 'memojepa'
+device: "cuda"
+seed: 42

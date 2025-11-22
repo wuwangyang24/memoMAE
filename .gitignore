@@ -1,0 +1,96 @@
+# -------------------------
+# Python cache and build files
+# -------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+*.dylib
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# -------------------------
+# Virtual environment folders
+# -------------------------
+venv/
+env/
+.venv/
+.env/
+
+# -------------------------
+# Editor / IDE files
+# -------------------------
+.vscode/
+.idea/
+
+# -------------------------
+# Jupyter & IPython
+# -------------------------
+.ipynb_checkpoints/
+.jupyter/
+
+# -------------------------
+# Data files (large)
+# -------------------------
+# Common image formats
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.tif
+*.gif
+*.webp
+
+# Numpy / torch large arrays
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+
+# -------------------------
+# Checkpoints & logs
+# -------------------------
+checkpoints/
+weights/
+models/
+logs/
+log/
+*.ckpt
+*.pt
+*.pth
+
+# Lightning logs
+lightning_logs/
+
+# TensorBoard logs
+runs/
+
+# -------------------------
+# WandB (ignore everything)
+# -------------------------
+wandb/
+
+# -------------------------
+# Temporary / cache files
+# -------------------------
+*.tmp
+*.temp
+*.log
+*.out
+.cache/
+.cache/*
+tmp/
+temp/
+
+# -------------------------
+# System files
+# -------------------------
+.DS_Store
+Thumbs.db

@@ -1,0 +1,25 @@
+name: memomae
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+
+  # --- Core deep learning stack (GPU enabled) ---
+  - pytorch
+  - torchvision
+  - pytorch-cuda=12.1  # Ensures correct CUDA runtime inside the env
+
+  # --- Lightning + ecosystem ---
+  - lightning
+  - transformers
+
+  # --- Config / Logging ---
+  - wandb
+  - omegaconf
+
+  # --- Image processing ---
+  - matplotlib
