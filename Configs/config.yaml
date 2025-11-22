@@ -4,7 +4,7 @@ data:
 
 mae:
   img_size: 224
-  patch_size: 16
+  patch_size: 32
   in_chans: 3
   embed_dim: 768 
   depth: 12
@@ -13,6 +13,7 @@ mae:
   decoder_depth: 8
   decoder_num_heads: 16
   mlp_ratio: 4.
+  qkv_bias: True
   norm_pix_loss: False
   return_attention: true
 

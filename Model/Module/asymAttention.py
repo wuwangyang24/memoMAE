@@ -45,7 +45,7 @@ class AsymAttention(nn.Module):
             .permute(0, 2, 1, 3)
         )
         kv = (
-            self.kv(torch.cat([x.unsqueeze(1).expand(-1, N, -1, -1)), sim_embeddings], dim=2))
+            self.kv(torch.cat([x.unsqueeze(1).expand(-1, N, -1, -1), sim_embeddings], dim=2))
             .reshape(B, -1, 2, self.num_heads, D // self.num_heads)
             .permute(2, 0, 3, 1, 4)
         )

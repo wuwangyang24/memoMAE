@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from .MAE.mae import MaskedAutoencoderViT
 from .Memory.memory_bank import MemoryBank
+from .Module.asymBlock import AsymBlock
 from .Module.asymAttention import AsymAttention
 
 
@@ -28,15 +29,14 @@ class memoMAE(MaskedAutoencoderViT):
             embed_dim=config.mae.embed_dim,
             device=f"cuda:{int(os.environ.get('LOCAL_RANK', 0))}"
         )
-        # replace standard attn with asymattn
-        # for blk in self.blocks:
-        #     blk.attn = AsymAttention(
-        #                     dim=blk.attn.qkv.in_features,
-        #                     num_heads=blk.attn.num_heads,
-        #                     qkv_bias=True,
-        #                     attn_drop=blk.attn.attn_drop.p if hasattr(blk.attn.attn_drop, "p") else 0.,
-        #                     proj_drop=blk.attn.proj_drop.p if hasattr(blk.attn.proj_drop, "p") else 0.,
-        #                 )
+        # replace blocks
+        self.blocks = nn.ModuleList([
+            AsymBlock(config.mae.embed_dim, 
+                      config.mae.num_heads, 
+                      config.mae.mlp_ratio, 
+                      qkv_bias=config.mae.qkv_bias, 
+                      norm_layer=nn.LayerNorm)
+            for i in range(config.mae.depth)])
     
     def forward_encoder(self, x, mask_ratio=0.75, k_sim_patches=5):
         '''
@@ -54,21 +54,17 @@ class memoMAE(MaskedAutoencoderViT):
         B, N, D = x.shape
         M = x_masked.shape[1]
         ids_keep = torch.nonzero(mask == 0, as_tuple=True)[1].reshape(B, M)
-        pos_embed_patches = self.pos_embed[:, 1:, :]  # (1, N, D)
         pos_embed_kept = torch.gather(
-            pos_embed_patches.expand(B, -1, -1),
+            self.pos_embed.expand(B, -1, -1),
             dim=1,
             index=ids_keep.unsqueeze(-1).expand(-1, -1, D)
         )
         sim_patch_embeds = self.memory_bank.recollect(x_masked, k_sim_patches) # (B, M, K, D)
         x_masked = x_masked + pos_embed_kept
-        cls_token = self.cls_token + self.pos_embed[:, :1, :]   # (1, 1, D)
-        cls_tokens = cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x_masked), dim=1)   # (B, 1+N, D)
         for blk in self.blocks:
-            x = blk(x, sim_patch_embeds)
-        x = self.norm(x)
-        return x, mask, ids_restore
+            x_masked = blk(x_masked, sim_patch_embeds)
+        x_masked = self.norm(x_masked)
+        return x_masked, mask, ids_restore
 
     def forward(self, imgs, memo_ratio=0.5, mask_ratio=0.75, k_sim_patches=5):
         '''

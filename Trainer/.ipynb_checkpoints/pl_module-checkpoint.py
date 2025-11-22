@@ -10,6 +10,7 @@ import umap.umap_ as umap
 from sklearn.manifold import TSNE
 from sklearn.cluster import DBSCAN
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
+from torchvision.utils import make_grid
 
 
 class LightningModel(pl.LightningModule):
@@ -18,6 +19,7 @@ class LightningModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
         self.model = model
+        self.patch_size = config.mae.patch_size
         # Extract optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
@@ -39,8 +41,11 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, Any]:
-        outputs = self.model(batch[0]['images'])
+        imgs = batch[0]["images"] 
+        outputs = self.model(imgs)
         loss = outputs.get('loss', None)
+        pred = outputs.get('pred', None)
+        mask = outputs.get('mask', None)
         # attn_scores = outputs.get('attn_scores', None)
         self.log(
             "val_loss",
@@ -50,13 +55,78 @@ class LightningModel(pl.LightningModule):
             logger=True,
             sync_dist=True,
         )
-        # if batch_idx == 0:
-        #     self.log_attention_maps(batch, attn_scores)
+        # only visualise for first batch each epoch
+        if batch_idx == 0:
+            with torch.no_grad():
+                rec = self.reconstruct_from_pred(pred, mask)
+                masked = self.build_masked_image(imgs, mask)
+                self.log_reconstruction_images(imgs, masked, rec, stage="val")
         return {"val_loss": loss}
 
     def on_validation_epoch_end(self):
         if self.model.memory_bank.stored_size > 0:
             self.visualize_cluster(self.model.memory_bank.memory)
+
+    def reconstruct_from_pred(self, pred: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        pred: (B, L, p*p*3)
+        mask: (B, L)  with 1 = masked, 0 = visible (MAE-style)
+        returns reconstructed image: (B, 3, H, W)
+        """
+        B, L, _ = pred.shape
+        p = self.patch_size
+        C = 3
+        # (B, L, 3, p, p)
+        pred = pred.view(B, L, C, p, p)
+        # apply mask: only fill masked patches, keep visible patches as 0 here
+        mask_ = mask.view(B, L, 1, 1, 1)                    # (B, L, 1, 1, 1)
+        pred = pred * mask_
+        # unpatchify to full image
+        rec = self.model.unpatchify(pred)                         # (B, 3, H, W)
+        return rec
+
+    def build_masked_image(self, imgs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        imgs: (B, 3, H, W)
+        mask: (B, L)
+        returns masked image (visible patches kept, masked -> 0)
+        """
+        B, C, H, W = imgs.shape
+        p = self.patch_size
+        h = H // p
+        w = W // p
+        # mask: (B, L) → (B, h, w, 1, 1)
+        mask_patches = mask.view(B, h, w, 1, 1)
+        # upsample mask to pixel space
+        mask_img = mask_patches.repeat(1, 1, 1, p, p)            # (B, h, w, p, p)
+        mask_img = mask_img.permute(0, 3, 1, 4, 2)               # (B, p, h, p, w)
+        mask_img = mask_img.reshape(B, 1, H, W)                  # (B, 1, H, W)
+        # visible = 1 - mask
+        visible = 1.0 - mask_img
+        return imgs * visible
+        
+    def log_reconstruction_images(self, imgs, masked, rec, stage="val"):
+        """
+        imgs, masked, rec: (B, 3, H, W)
+        """
+        n = min(8, imgs.size(0))
+        imgs = imgs[:n]
+        masked = masked[:n]
+        rec = rec[:n]
+        # undo normalization
+        mean = torch.tensor([0.485, 0.456, 0.406], device=imgs.device).view(1,3,1,1)
+        std  = torch.tensor([0.229, 0.224, 0.225], device=imgs.device).view(1,3,1,1)
+        imgs = imgs * std + mean
+        # rec  = rec * std + mean
+        # masked = masked * std + mean
+        # clamp to [0,1] for visualization
+        imgs = imgs.clamp(0, 1)
+        masked = masked.clamp(0, 1)
+        rec = rec.clamp(0, 1)
+        # stack: [orig | masked | recon] horizontally for each sample
+        rows = torch.cat([imgs, rec], dim=0)  # (3n, 3, H, W)
+        grid = make_grid(rows, nrow=n)                # show n per row: orig/masked/rec in rows
+        self.logger.experiment.log({f"{stage}/reconstructions": wandb.Image(grid)}, step=self.global_step)
 
     def log_attention_maps(self, batch: torch.Tensor, attn_scores: Optional[torch.Tensor]) -> None:
         """Log attention maps overlaid on input images to WandB."""

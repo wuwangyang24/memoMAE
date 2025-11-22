@@ -1,6 +1,6 @@
 import timm
 import torch.nn as nn
-from asymAttention import AsymAttention 
+from .asymAttention import AsymAttention 
 
 
 class AsymBlock(nn.Module):
@@ -60,7 +60,7 @@ class AsymBlock(nn.Module):
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x, attn
         else:
-            x, attn = self.attn(self.norm1(x), self.norm1(sim_embeddings), return_attn=False)
+            x = self.attn(self.norm1(x), self.norm1(sim_embeddings), return_attn=False)
             x = x + self.drop_path(x)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x
