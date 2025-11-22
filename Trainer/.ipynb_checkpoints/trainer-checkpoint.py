@@ -7,7 +7,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.profilers import AdvancedProfiler
 from omegaconf import DictConfig
 from Pipeline.pl_module import LightningModel
-from Pipeline.load_pipeline import load_ppl
+from Model.memoMAE import memoMAE
 warnings.filterwarnings("ignore")
 
 
@@ -17,9 +17,9 @@ class Trainer:
         self.config = config
         self.name = self._generate_experiment_name(config)
         self.wandb_logger = self._init_wandb_logger()
-        self.ppl = load_ppl(config)
-        self.pl_module = LightningModel(self.ppl, config)
-        self.wandb_logger.watch(self.ppl, log="gradients", log_freq=1000)
+        self.model = memoMAE(config)
+        self.pl_module = LightningModel(self.model, config)
+        self.wandb_logger.watch(self.model, log="gradients", log_freq=1000)
         self.resume_checkpoint = self._find_latest_checkpoint(self._checkpoint_dir)
         self.pl_trainer = self._init_pl_trainer()
 

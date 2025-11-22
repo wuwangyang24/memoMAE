@@ -34,7 +34,7 @@ class RecollectFaiss:
             cfg.device = self.device_id
             cfg.useFloat16 = use_fp16
             # Direct GPU index (no CPU->GPU copy every time)
-            self.index = faiss.GpuIndexFlatIP(self.res, embed_dim, cfg)
+            self.index = faiss.GpuIndexFlatL2(self.res, embed_dim, cfg)
 
     def _prepare_tensor(self, x: torch.Tensor, for_index: bool) -> torch.Tensor:
         """

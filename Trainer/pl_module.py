@@ -15,10 +15,10 @@ from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 
 class LightningModel(pl.LightningModule):
 
-    def __init__(self, ppl: Any, config: Any) -> None:
+    def __init__(self, model: Any, config: Any) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=['ppl'])
-        self.ppl = ppl
+        self.save_hyperparameters(ignore=['model'])
+        self.model = model
         # Extract optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
@@ -32,7 +32,7 @@ class LightningModel(pl.LightningModule):
         self.max_epochs = config.training.max_epochs
         
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> Any:
-        loss = self.ppl(batch[0]['images']).get('loss', None)
+        loss = self.model(batch[0]['images']).get('loss', None)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         # --- Log LR every step ---
         lr = self.trainer.optimizers[0].param_groups[0]["lr"]
@@ -40,7 +40,7 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, Any]:
-        outputs = self.ppl(batch[0]['images'], return_attn=True)
+        outputs = self.model(batch[0]['images'], return_attn=True)
         loss = outputs.get('loss', None)
         attn_scores = outputs.get('attn_scores', None)
         self.log(
@@ -56,7 +56,7 @@ class LightningModel(pl.LightningModule):
         return {"val_loss": loss}
 
     def on_validation_epoch_end(self):
-        if self.ppl.memory_bank.stored_size > 0:
+        if self.model.memory_bank.stored_size > 0:
             self.visualize_cluster(self.ppl.memory_bank.memory)
 
     def log_attention_maps(self, batch: torch.Tensor, attn_scores: Optional[torch.Tensor]) -> None:
@@ -142,7 +142,7 @@ class LightningModel(pl.LightningModule):
             hue="cluster",
             s=10,
             linewidth=0,
-            legend=False   # 👈 TURN OFF LABEL LEGEND
+            legend=False
         )
         plt.title(f"t-SNE Cluster Visualization — {n_clusters} clusters")
         plt.tight_layout()
