@@ -2,8 +2,8 @@ import os
 import argparse
 from omegaconf import OmegaConf
 import wandb
-from Pipeline.trainer import Trainer
-from Data.dataloader_dali.datamodule_dali import DALIDataModule
+from Trainer.trainer import Trainer
+from Data.datamodule_dali import DALIDataModule
 
 def load_config(config_path: str) -> dict:
     if not os.path.exists(config_path):
@@ -13,8 +13,8 @@ def load_config(config_path: str) -> dict:
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Training script for memojepa')
-    parser.add_argument('--config', type=str, default='Configs/config_memojepa.yaml', help='Path to the configuration file')
+    parser = argparse.ArgumentParser(description='Training script for memomae')
+    parser.add_argument('--config', type=str, default='Configs/config.yaml', help='Path to the configuration file')
     args = parser.parse_args()
 
     # Load configuration

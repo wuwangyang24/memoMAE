@@ -1,9 +1,9 @@
 import os
 import torch
 import torch.nn as nn
-from mae import MaskedAutoencoderViT
-from Memory.memory_bank import MemoryBank
-from Module.asymAttention import AsymAttention
+from .MAE.mae import MaskedAutoencoderViT
+from .Memory.memory_bank import MemoryBank
+from .Module.asymAttention import AsymAttention
 
 
 class memoMAE(MaskedAutoencoderViT):
@@ -26,17 +26,14 @@ class memoMAE(MaskedAutoencoderViT):
             device=f"cuda:{int(os.environ.get('LOCAL_RANK', 0))}"
         )
         # replace standard attn with asymattn
-        for blk in self.blocks:
-            blk.attn = AsymAttention(
-                            dim=blk.attn.qkv.in_features,
-                            num_heads=blk.attn.num_heads,
-                            qkv_bias=True,
-                            attn_drop=blk.attn.attn_drop.p if hasattr(blk.attn.attn_drop, "p") else 0.,
-                            proj_drop=blk.attn.proj_drop.p if hasattr(blk.attn.proj_drop, "p") else 0.,
-                        )
-
-    def get_k_simpatches(self, x, k):
-        pass
+        # for blk in self.blocks:
+        #     blk.attn = AsymAttention(
+        #                     dim=blk.attn.qkv.in_features,
+        #                     num_heads=blk.attn.num_heads,
+        #                     qkv_bias=True,
+        #                     attn_drop=blk.attn.attn_drop.p if hasattr(blk.attn.attn_drop, "p") else 0.,
+        #                     proj_drop=blk.attn.proj_drop.p if hasattr(blk.attn.proj_drop, "p") else 0.,
+        #                 )
     
     def forward_encoder(self, x, mask_ratio=0.75, k_sim_patches=5):
         x_masked, mask, ids_restore = self.random_masking(x, mask_ratio) # (B, M, D)
@@ -51,20 +48,21 @@ class memoMAE(MaskedAutoencoderViT):
         )
         sim_patch_embeds = self.memory_bank.recollect(x_masked, k_sim_patches) # (B, M, K, D)
         x_masked = x_masked + pos_embed_kept
-        x_masked = torch.cat([x_masked, sim_patch_embeds], dim=2).reshape(B, -1, D) # (B, M, K+1, D)
+        x_masked = torch.cat([x_masked.unsqueeze(2), sim_patch_embeds], dim=2).reshape(B, -1, D) # (B, M*(K+1), D)
         cls_token = self.cls_token + self.pos_embed[:, :1, :]   # (1, 1, D)
         cls_tokens = cls_token.expand(B, -1, -1)
         x = torch.cat((cls_tokens, x_masked), dim=1)   # (B, 1+M*(K+1), D)
         for blk in self.blocks:
             x = blk(x)
+        x = torch.cat([x[:, :1, :], x[:, 1:, :][:, ::6, :]], dim=1)
         x = self.norm(x)
         return x, mask, ids_restore
 
     def forward(self, imgs, memo_ratio=0.5, mask_ratio=0.75, k_sim_patches=5):
         x = self.patch_embed(imgs) # (B, N, D)
-        self.memory_bank.memorize(x.view(-1, x.shape[-1]))
+        self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
         latents, mask, ids_restore = self.forward_encoder(x, mask_ratio, k_sim_patches) # (B, M, D)
-        pred = self.forward_decoder(latent, ids_restore) # (B, N, p*p*3)
+        pred = self.forward_decoder(latents, ids_restore) # (B, N, p*p*3)
         loss = self.forward_loss(imgs, pred, mask)
         return {'loss':loss, 'pred':pred, 'mask': mask}
         

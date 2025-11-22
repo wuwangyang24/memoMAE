@@ -6,7 +6,7 @@ import lightning as pl
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.profilers import AdvancedProfiler
 from omegaconf import DictConfig
-from Pipeline.pl_module import LightningModel
+from Trainer.pl_module import LightningModel
 from Model.memoMAE import memoMAE
 warnings.filterwarnings("ignore")
 

@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from typing import Any, Optional, Dict
 import umap.umap_ as umap
 from sklearn.manifold import TSNE
-from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 
@@ -40,9 +39,9 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, Any]:
-        outputs = self.model(batch[0]['images'], return_attn=True)
+        outputs = self.model(batch[0]['images'])
         loss = outputs.get('loss', None)
-        attn_scores = outputs.get('attn_scores', None)
+        # attn_scores = outputs.get('attn_scores', None)
         self.log(
             "val_loss",
             loss,
@@ -51,13 +50,13 @@ class LightningModel(pl.LightningModule):
             logger=True,
             sync_dist=True,
         )
-        if batch_idx == 0:
-            self.log_attention_maps(batch, attn_scores)
+        # if batch_idx == 0:
+        #     self.log_attention_maps(batch, attn_scores)
         return {"val_loss": loss}
 
     def on_validation_epoch_end(self):
         if self.model.memory_bank.stored_size > 0:
-            self.visualize_cluster(self.ppl.memory_bank.memory)
+            self.visualize_cluster(self.model.memory_bank.memory)
 
     def log_attention_maps(self, batch: torch.Tensor, attn_scores: Optional[torch.Tensor]) -> None:
         """Log attention maps overlaid on input images to WandB."""
@@ -161,7 +160,7 @@ class LightningModel(pl.LightningModule):
         total_steps = self.max_epochs * steps_per_epoch
         print(f"Warmup: {warmup_steps} steps, total: {total_steps} steps")
         optimizer = torch.optim.AdamW(
-            self.ppl.parameters(),
+            self.model.parameters(),
             betas=(self.beta1, self.beta2),
             lr=self.lr,
             weight_decay=self.weight_decay

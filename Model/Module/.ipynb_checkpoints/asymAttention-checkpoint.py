@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 
@@ -8,7 +9,7 @@ class AsymAttention(nn.Module):
             num_heads=8,
             qkv_bias=True,
             attn_drop=0.,
-            proj_drop=0.
+            proj_drop=0.,
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -23,15 +24,14 @@ class AsymAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x):
-        B, N, K, D = x.shape # K = 1 + number of similar patches
-        NK = N*K
+    def forward(self, x, attn_mask=None):
+        B, NK, D = x.shape
 
         # q: (B, N, D) → (B, #heads, N, head_dim)
         # kv: (B, NK, 2*D) → (2, B, #heads, NK, head_dim)
         q = (
-            self.q(x[:, :, 0, :])
-            .reshape(B, N, self.num_heads, D // self.num_heads)
+            self.q(torch.cat([x[:, :1, :], x[:, 1:, :][:, ::6, :]], dim=1))
+            .reshape(B, -1, self.num_heads, D // self.num_heads)
             .permute(0, 2, 1, 3)
         )
         kv = (
@@ -39,20 +39,20 @@ class AsymAttention(nn.Module):
             .reshape(B, NK, 2, self.num_heads, D // self.num_heads)
             .permute(2, 0, 3, 1, 4)
         )
-        k, v = kv[1], kv[2]
+        k, v = kv[0], kv[1]
 
         # scaled dot-product attention
         attn = (q @ k.transpose(-2, -1)) * self.scale     # (B, heads, N, M)
+        print(attn.shape)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
         # attention output
         x = attn @ v                                      # (B, heads, N, head_dim)
-
         # merge heads: (B, N, D)
         x = (
             x.transpose(1, 2)
-             .reshape(B, N, D)
+             .reshape(B, -1, D)
         )
 
         x = self.proj(x)
