@@ -67,6 +67,48 @@ class LightningModel(pl.LightningModule):
         if self.model.memory_bank.stored_size > 0:
             self.visualize_cluster(self.model.memory_bank.memory)
 
+    def configure_optimizers(self) -> Dict[str, Any]:
+        # ---- compute steps ----
+        steps_per_epoch = self.trainer.estimated_stepping_batches // self.max_epochs
+        warmup_steps = self.warmup_epochs * steps_per_epoch
+        total_steps = self.max_epochs * steps_per_epoch
+        print(f"Warmup: {warmup_steps} steps, total: {total_steps} steps")
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            betas=(self.beta1, self.beta2),
+            lr=self.lr,
+            weight_decay=self.weight_decay
+        )
+        # ---- schedulers ----
+        warmup = LinearLR(
+            optimizer,
+            start_factor=self.start_factor,
+            total_iters=warmup_steps,
+        )
+    
+        cosine = CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, total_steps - warmup_steps),
+            eta_min=self.eta_min,
+        )
+    
+        scheduler = SequentialLR(
+            optimizer,
+            schedulers=[warmup, cosine],
+            milestones=[warmup_steps]
+        )
+    
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+            }
+        }
+
+    # --------------------------------------------------------------------------------#
+    # helper functions
+    # --------------------------------------------------------------------------------#
     def reconstruct_from_pred(self, pred: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
         pred: (B, L, p*p*3)
@@ -126,7 +168,7 @@ class LightningModel(pl.LightningModule):
         # stack: [orig | masked | recon] horizontally for each sample
         rows = torch.cat([imgs, rec], dim=0)  # (3n, 3, H, W)
         grid = make_grid(rows, nrow=n)                # show n per row: orig/masked/rec in rows
-        self.logger.experiment.log({f"{stage}/reconstructions": wandb.Image(grid)}, step=self.global_step)
+        self.logger.experiment.log({f"{stage}/reconstructions": wandb.Image(grid), "epoch": self.current_epoch})
 
     def log_attention_maps(self, batch: torch.Tensor, attn_scores: Optional[torch.Tensor]) -> None:
         """Log attention maps overlaid on input images to WandB."""
@@ -221,43 +263,3 @@ class LightningModel(pl.LightningModule):
             "num_clusters": n_clusters
         })
         plt.close()
-
-
-    def configure_optimizers(self) -> Dict[str, Any]:
-        # ---- compute steps ----
-        steps_per_epoch = self.trainer.estimated_stepping_batches // self.max_epochs
-        warmup_steps = self.warmup_epochs * steps_per_epoch
-        total_steps = self.max_epochs * steps_per_epoch
-        print(f"Warmup: {warmup_steps} steps, total: {total_steps} steps")
-        optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            betas=(self.beta1, self.beta2),
-            lr=self.lr,
-            weight_decay=self.weight_decay
-        )
-        # ---- schedulers ----
-        warmup = LinearLR(
-            optimizer,
-            start_factor=self.start_factor,
-            total_iters=warmup_steps,
-        )
-    
-        cosine = CosineAnnealingLR(
-            optimizer,
-            T_max=max(1, total_steps - warmup_steps),
-            eta_min=self.eta_min,
-        )
-    
-        scheduler = SequentialLR(
-            optimizer,
-            schedulers=[warmup, cosine],
-            milestones=[warmup_steps]
-        )
-    
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-            }
-        }

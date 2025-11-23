@@ -66,7 +66,7 @@ class memoMAE(MaskedAutoencoderViT):
         x_masked = self.norm(x_masked)
         return x_masked, mask, ids_restore
 
-    def forward(self, imgs, memo_ratio=0.5, mask_ratio=0.75, k_sim_patches=5):
+    def forward(self, imgs, memo_ratio=0.5, mask_ratio=0.75, num_sim_patches=5):
         '''
         Forward function.
         Args:
@@ -81,7 +81,7 @@ class memoMAE(MaskedAutoencoderViT):
         '''
         x = self.patch_embed(imgs) # (B, N, D)
         self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
-        latents, mask, ids_restore = self.forward_encoder(x, mask_ratio, k_sim_patches) # (B, M, D)
+        latents, mask, ids_restore = self.forward_encoder(x, mask_ratio, num_sim_patches) # (B, M, D)
         pred = self.forward_decoder(latents, ids_restore) # (B, N, p*p*3)
         loss = self.forward_loss(imgs, pred, mask)
         return {'loss':loss, 'pred':pred, 'mask': mask}

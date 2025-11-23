@@ -16,8 +16,8 @@ class AsymAttention(nn.Module):
     ):
         super().__init__()
         self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.scale = head_dim ** -0.5
+        self.head_dim = dim // num_heads
+        self.scale = self.head_dim ** -0.5
         # q and kv projection
         self.q = nn.Linear(dim, dim, bias=qkv_bias)
         self.kv = nn.Linear(dim, dim * 2, bias=qkv_bias)
@@ -39,19 +39,29 @@ class AsymAttention(nn.Module):
         _, _, M, _ = sim_embeddings.shape
         # q: (B, N, D) → (B, #heads, N, head_dim)
         # kv: (B, NK, 2*D) → (2, B, #heads, NK, head_dim)
-        q = (
-            self.q(x)
-            .reshape(B, -1, self.num_heads, D // self.num_heads)
-            .permute(0, 2, 1, 3)
-        )
-        kv = (
-            self.kv(torch.cat([x.unsqueeze(1).expand(-1, N, -1, -1), sim_embeddings], dim=2))
-            .reshape(B, -1, 2, self.num_heads, D // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
-        )
-        k, v = kv[0], kv[1]
-        # scaled dot-product attention
-        attn = (q @ k.transpose(-2, -1)) * self.scale     # (B, heads, N, N+M)
+        # ---- q ----
+        q = self.q(x).reshape(B, N, self.num_heads, D // self.num_heads).transpose(1, 2)
+        # ---- kv x ----
+        kv_x = self.kv(x)                          # (B, N, 2D)
+        k_x, v_x = kv_x.chunk(2, dim=-1)
+        # ---- kv sim ----
+        kv_sim = self.kv(sim_embeddings)           # (B, N, M, 2D)
+        k_sim, v_sim = kv_sim.chunk(2, dim=-1)
+        # concat final K and V
+        k = torch.cat([k_x.unsqueeze(1).expand(-1, N, -1, -1), k_sim], dim=2)  # (B, N, N+M, D)
+        v = torch.cat([v_x.unsqueeze(1).expand(-1, N, -1, -1), v_sim], dim=2)
+        # # reshape for attention
+        # k = k.reshape(B, N, -1, self.num_heads, D // self.num_heads).transpose(2, 3)
+        # v = v.reshape(B, N, -1, self.num_heads, D // self.num_heads).transpose(2, 3)
+        # # edit shapes → attention dims: (B, heads, query_tokens, key_tokens)
+        # k = k.reshape(B, self.num_heads, N, -1, D // self.num_heads)
+        # v = v.reshape(B, self.num_heads, N, -1, D // self.num_heads)
+        L = k.size(2)  # or k.shape[2], should be N+M
+        # k, v: (B, N, L, D) -> (B, H, N, L, Hd)
+        k = k.view(B, N, L, self.num_heads, self.head_dim).permute(0, 3, 1, 2, 4)
+        v = v.view(B, N, L, self.num_heads, self.head_dim).permute(0, 3, 1, 2, 4)
+        
+        attn = torch.matmul(q.unsqueeze(3), k.transpose(-2, -1)) * self.scale     # (B, heads, N, N+M)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
         # attention output
