@@ -21,6 +21,7 @@ class LightningModel(pl.LightningModule):
         self.model = model
         self.patch_size = config.mae.patch_size
         self.nosim_train_epochs = config.hyperparameters.nosim_train_epochs
+        self.return_attn = config.mae.return_attn
         # Extract optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
@@ -37,7 +38,7 @@ class LightningModel(pl.LightningModule):
         
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> Any:
         nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during training
-        loss = self.model(batch[0]['images'], nosim_train=nosim_train).get('loss', None)
+        loss = self.model(batch[0]['images'], nosim_train=nosim_train, return_attn=self.return_attn).get('loss', None)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         # --- Log LR every step ---
         lr = self.trainer.optimizers[0].param_groups[0]["lr"]
@@ -47,11 +48,11 @@ class LightningModel(pl.LightningModule):
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, Any]:
         nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during validation
         imgs = batch[0]["images"] 
-        outputs = self.model(imgs, nosim_train=nosim_train)
+        outputs = self.model(imgs, nosim_train=nosim_train, return_attn=self.return_attn)
         loss = outputs.get('loss', None)
         pred = outputs.get('pred', None)
         mask = outputs.get('mask', None)
-        attn_scores = outputs.get('attn_scores', None)
+        attn_scores = outputs.get('attn', None)
         # log val loss
         self.log(
             "val_loss",
@@ -63,7 +64,7 @@ class LightningModel(pl.LightningModule):
         )
         # store attention scores for logging
         if attn_scores is not None:
-            self.accu_attn_scores.append(attn_scores.deatch.cpu())
+            self.accu_attn_scores.append(attn_scores.detach().cpu())
         # only visualise for first batch each epoch
         if batch_idx == 0:
             with torch.no_grad():

@@ -38,7 +38,7 @@ class memoMAE(MaskedAutoencoderViT):
                       norm_layer=nn.LayerNorm)
             for i in range(config.mae.depth)])
     
-    def forward_encoder(self, x, mask_ratio=0.75, k_sim_patches=5):
+    def forward_encoder(self, x, mask_ratio=0.75, k_sim_patches=5, return_attn: bool=False):
         '''
         Forward function of encoder.
         Args:
@@ -65,11 +65,20 @@ class memoMAE(MaskedAutoencoderViT):
             sim_patch_embeds = None  # None when no similar patches
         x_masked = x_masked + pos_embed_kept
         for blk in self.blocks:
-            x_masked = blk(x_masked, sim_patch_embeds)
-        x_masked = self.norm(x_masked)
-        return x_masked, mask, ids_restore
+            if return_attn:
+                x_masked, attn = blk(x_masked, sim_patch_embeds, True)
+            else:
+                x_masked = blk(x_masked, sim_patch_embeds, return_attn)
+        if return_attn:
+            return self.norm(x_masked), mask, ids_restore, attn
+        return self.norm(x_masked), mask, ids_restore
 
-    def forward(self, imgs, mask_ratio=0.75, nosim_train: bool=False, num_sim_patches: int=5):
+    def forward(self, 
+                imgs, 
+                mask_ratio=0.75, 
+                nosim_train: bool=False, 
+                num_sim_patches: int=5, 
+                return_attn: bool=False):
         '''
         Forward function.
         Args:
@@ -86,10 +95,14 @@ class memoMAE(MaskedAutoencoderViT):
         self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
         if nosim_train:
             num_sim_patches = 0
-        latents, mask, ids_restore = self.forward_encoder(x, mask_ratio, num_sim_patches) # (B, M, D)
+        attn = None
+        if return_attn:
+            latents, mask, ids_restore, attn = self.forward_encoder(x, mask_ratio, num_sim_patches, True) # (B, M, D)
+        else:
+            latents, mask, ids_restore = self.forward_encoder(x, mask_ratio, num_sim_patches) # (B, M, D)
         pred = self.forward_decoder(latents, ids_restore) # (B, N, p*p*3)
         loss = self.forward_loss(imgs, pred, mask)
-        return {'loss':loss, 'pred':pred, 'mask': mask}
+        return {'loss':loss, 'pred':pred, 'mask': mask, 'attn':attn}
         
         
     

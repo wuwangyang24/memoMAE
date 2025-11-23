@@ -1,9 +1,11 @@
 import os
+import torch
 import argparse
 from omegaconf import OmegaConf
 import wandb
 from Trainer.trainer import Trainer
 from Data.datamodule_dali import DALIDataModule
+torch.set_float32_matmul_precision('medium')
 
 def load_config(config_path: str) -> dict:
     if not os.path.exists(config_path):

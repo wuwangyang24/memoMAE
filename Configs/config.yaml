@@ -15,7 +15,7 @@ mae:
   mlp_ratio: 4.
   qkv_bias: True
   norm_pix_loss: False
-  return_attention: True
+  return_attn: True
 
 memory_bank:
   memory_capacity: 100000
@@ -31,7 +31,7 @@ training:
   loss_type: "mae"
   batch_size: 64
   max_epochs: 100
-  val_every_epochs: 5
+  val_every_epochs: 1
   accumulate_grad_batches: 4
 
 optimizer:
