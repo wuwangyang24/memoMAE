@@ -54,13 +54,15 @@ class AsymBlock(nn.Module):
             output features with shape (B, N, D)
             (optional) attention weights with shape (B, num_heads, N, N+K)
         '''
+        if sim_embeddings is not None:
+            sim_embeddings = self.norm1(sim_embeddings)
         if return_attn:
-            x, attn = self.attn(self.norm1(x), self.norm1(sim_embeddings), return_attn=True)
+            x, attn = self.attn(self.norm1(x), sim_embeddings, return_attn=True)
             x = x + self.drop_path(x)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x, attn
         else:
-            x = self.attn(self.norm1(x), self.norm1(sim_embeddings), return_attn=False)
+            x = self.attn(self.norm1(x), sim_embeddings, return_attn=False)
             x = x + self.drop_path(x)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x

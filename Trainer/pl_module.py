@@ -20,6 +20,7 @@ class LightningModel(pl.LightningModule):
         self.save_hyperparameters(ignore=['model'])
         self.model = model
         self.patch_size = config.mae.patch_size
+        self.nosim_train_epochs = config.hyperparameters.nosim_train_epochs
         # Extract optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
@@ -31,9 +32,12 @@ class LightningModel(pl.LightningModule):
         self.warmup_epochs = optimizer_config.warmup_epochs
         self.start_factor = optimizer_config.start_factor
         self.max_epochs = config.training.max_epochs
+        # attention storage for logging
+        self.accu_attn_scores = []
         
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> Any:
-        loss = self.model(batch[0]['images']).get('loss', None)
+        nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during training
+        loss = self.model(batch[0]['images'], nosim_train=nosim_train).get('loss', None)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         # --- Log LR every step ---
         lr = self.trainer.optimizers[0].param_groups[0]["lr"]
@@ -41,12 +45,14 @@ class LightningModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, Any]:
+        nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during validation
         imgs = batch[0]["images"] 
-        outputs = self.model(imgs)
+        outputs = self.model(imgs, nosim_train=nosim_train)
         loss = outputs.get('loss', None)
         pred = outputs.get('pred', None)
         mask = outputs.get('mask', None)
-        # attn_scores = outputs.get('attn_scores', None)
+        attn_scores = outputs.get('attn_scores', None)
+        # log val loss
         self.log(
             "val_loss",
             loss,
@@ -55,17 +61,27 @@ class LightningModel(pl.LightningModule):
             logger=True,
             sync_dist=True,
         )
+        # store attention scores for logging
+        if attn_scores is not None:
+            self.accu_attn_scores.append(attn_scores.deatch.cpu())
         # only visualise for first batch each epoch
         if batch_idx == 0:
             with torch.no_grad():
+                # log reconstruction images
                 rec = self.reconstruct_from_pred(pred, mask)
                 masked = self.build_masked_image(imgs, mask)
                 self.log_reconstruction_images(imgs, masked, rec, stage="val")
         return {"val_loss": loss}
 
     def on_validation_epoch_end(self):
+        # visualize memory bank clusters
         if self.model.memory_bank.stored_size > 0:
             self.visualize_cluster(self.model.memory_bank.memory)
+        # log attention distribution
+        if len(self.accu_attn_scores) > 0:
+            attn_scores = torch.cat(self.accu_attn_scores, dim=0)
+            self.log_attention_distribution(attn_scores)
+            self.accu_attn_scores = []  # reset for next epoch
 
     def configure_optimizers(self) -> Dict[str, Any]:
         # ---- compute steps ----
@@ -210,6 +226,43 @@ class LightningModel(pl.LightningModule):
                     f"val_image_and_attention_{i}": wandb.Image((side_by_side * 255).astype("uint8")),
                     "epoch": self.current_epoch,
                 })
+
+    def log_attention_distribution(self, attn: torch.Tensor):
+        """
+        Log the distribution of self and similar attention scores
+        Args:
+            attn: Tensor of shape (B, H, N, N+M)
+            step: Optional step number for W&B
+            prefix: Prefix for W&B plot titles
+        """
+        N, NM = attn.shape[-2], attn.shape[-1]
+        if N == NM:
+            attn_self = attn.numpy().flatten()
+            # Plot histogram using matplotlib
+            plt.figure(figsize=(6, 4))
+            plt.hist(attn_self, bins=50, color='skyblue', alpha=0.7)
+            plt.title(f"Self Attention Distribution")
+            plt.xlabel("Attention score")
+            plt.ylabel("Frequency")
+            fig = plt.gcf()
+        else:
+            # Separate self and similar attention
+            attn_self = attn[..., :N].numpy().flatten()
+            attn_sim  = attn[..., N:].numpy().flatten()
+            # Plot histograms using matplotlib
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+            axes[0].hist(attn_self, bins=50, color='skyblue', alpha=0.7)
+            axes[0].set_title(f"Self Attention Distribution")
+            axes[0].set_xlabel("Attention score")
+            axes[0].set_ylabel("Frequency")
+            axes[1].hist(attn_sim, bins=50, color='salmon', alpha=0.7)
+            axes[1].set_title(f"Similar Patches Attention")
+            axes[1].set_xlabel("Attention score")
+            axes[1].set_ylabel("Frequency")
+            plt.tight_layout()
+        # Log figure to W&B
+        self.logger.experiment.log({" Attention Distribution": wandb.Image(fig), "epoch": self.current_epoch})
+        plt.close(fig)
 
     def visualize_cluster(self, memory_embeddings):
         """
