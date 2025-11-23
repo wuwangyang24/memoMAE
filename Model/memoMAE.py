@@ -69,7 +69,7 @@ class memoMAE(MaskedAutoencoderViT):
         x_masked = self.norm(x_masked)
         return x_masked, mask, ids_restore
 
-    def forward(self, imgs, memo_ratio: float=0.5, mask_ratio=0.75, nosim_train: bool=False, num_sim_patches: int=5):
+    def forward(self, imgs, mask_ratio=0.75, nosim_train: bool=False, num_sim_patches: int=5):
         '''
         Forward function.
         Args:
