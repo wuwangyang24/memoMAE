@@ -71,7 +71,7 @@ class Trainer:
             every_n_epochs=self.config.checkpoint.save_every_epochs,
             save_top_k=1,
         )
-        profiler = AdvancedProfiler(filename="advanced_profiler.txt")
+        profiler = AdvancedProfiler(filename="advanced_profiler")
 
         return pl.Trainer(
             accelerator="gpu",
@@ -105,7 +105,19 @@ class Trainer:
             print("Training completed successfully.")
         except Exception as e:
             print(f"Training failed: {e}")
+            # Optionally still dump profiler here:
+            if hasattr(self.pl_trainer, "profiler") and hasattr(self.pl_trainer.profiler, "summary"):
+                print("Saving profiler after exception...")
+                self.pl_trainer.profiler.summary()
             raise
         finally:
+            # Always try to dump the profiler at the very end
+            if hasattr(self.pl_trainer, "profiler") and hasattr(self.pl_trainer.profiler, "summary"):
+                try:
+                    print("Final profiler summary...")
+                    self.pl_trainer.profiler.summary()
+                except Exception as e:
+                    print(f"Could not write profiler summary: {e}")
+    
             import wandb
             wandb.finish()

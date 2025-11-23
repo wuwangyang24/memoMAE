@@ -30,7 +30,7 @@ hyperparameters:
 training:
   loss_type: "mae"
   batch_size: 32
-  max_epochs: 100
+  max_epochs: 1
   val_every_epochs: 5
   accumulate_grad_batches: 4
 
@@ -42,12 +42,12 @@ optimizer:
   eta_min: 1e-5
   weight_decay: 0.05
   lr_scheduler: "cosine"
-  warmup_epochs: 10
+  warmup_epochs: 1
   start_factor: 0.1
 
 checkpoint:
   save_every_epochs: 50
-  save_dir: "checkpoints/memojepa"
+  save_dir: "checkpoints/memomae"
 
 logging:    
   project: 'memomae'
@@ -55,6 +55,6 @@ logging:
   log_every_epochs: 1
   logger: 'wandb'
 
-name: 'memojepa'
+name: 'memomae'
 device: "cuda"
 seed: 42
