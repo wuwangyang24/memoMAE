@@ -77,7 +77,7 @@ class AsymAttention(nn.Module):
     #         return x, attn
     #     return x
 
-    def forward_base(self, x, attn_mask=None, return_attn: bool = False):
+    def forward_base(self, x, return_attn: bool = False):
         """
         Standard multi-head self-attention forward function.
         Args:
@@ -98,8 +98,6 @@ class AsymAttention(nn.Module):
         v = v.view(B, N, H, Dh).permute(0, 2, 1, 3)            # (B, H, N, Dh)
         # 2. Scaled dot-product attention
         attn = torch.matmul(q, k.transpose(-2, -1)) * self.scale  # (B, H, N, N)
-        if attn_mask is not None:
-            attn = attn.masked_fill(attn_mask == 0, float('-inf'))
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
         # 3. Weighted sum
@@ -170,7 +168,7 @@ class AsymAttention(nn.Module):
             return out, attn
         return out
     
-    def forward(self, x, sim_embeddings=None, attn_mask=None, return_attn: bool = False):
+    def forward(self, x, sim_embeddings=None, return_attn: bool = False):
         '''
         Forward function that selects between asymmetric and standard attention.
         Args:
@@ -184,5 +182,5 @@ class AsymAttention(nn.Module):
         if sim_embeddings is not None:
             return self.forward_asym(x, sim_embeddings, return_attn)
         else:
-            return self.forward_base(x, attn_mask, return_attn)
+            return self.forward_base(x, return_attn)
 
