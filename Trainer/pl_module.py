@@ -264,7 +264,7 @@ class LightningModel(pl.LightningModule):
         self.logger.experiment.log({" Attention Distribution": wandb.Image(fig), "epoch": self.current_epoch})
         plt.close(fig)
 
-    def visualize_cluster(self, memory_embeddings):
+    def visualize_cluster(self, memory_embeddings: torch.Tensor):
         """
         memory_embeddings: numpy array or torch.Tensor of shape (B, D)
         Logs UMAP→tSNE 2D cluster scatterplot to W&B.
