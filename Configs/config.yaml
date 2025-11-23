@@ -15,7 +15,7 @@ mae:
   mlp_ratio: 4.
   qkv_bias: True
   norm_pix_loss: False
-  return_attention: true
+  return_attention: True
 
 memory_bank:
   memory_capacity: 10000
