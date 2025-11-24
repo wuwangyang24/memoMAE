@@ -40,12 +40,15 @@ env/
 # Common image formats
 *.jpg
 *.jpeg
+*.JPEG
 *.png
 *.bmp
 *.tiff
 *.tif
 *.gif
 *.webp
+*.json
+*.txt
 
 # Numpy / torch large arrays
 *.npy
