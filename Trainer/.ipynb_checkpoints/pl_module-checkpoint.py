@@ -1,5 +1,6 @@
 import torch
 import wandb
+import hdbscan
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -265,23 +266,33 @@ class LightningModel(pl.LightningModule):
         self.logger.experiment.log({" Attention Distribution": wandb.Image(fig), "epoch": self.current_epoch})
         plt.close(fig)
 
+
+    
     def visualize_cluster(self, memory_embeddings: torch.Tensor):
-        """
-        memory_embeddings: numpy array or torch.Tensor of shape (B, D)
-        Logs UMAP→tSNE 2D cluster scatterplot to W&B.
-        """
         memory_embeddings = memory_embeddings.detach().cpu().numpy()
         n = memory_embeddings.shape[0]
-        idx = np.random.choice(n, 5000, replace=False)
-        memory_embeddings = memory_embeddings[idx]
+        # subsample (UMAP + tSNE heavy)
+        if n > 10000:
+            idx = np.random.choice(n, 10000, replace=False)
+            memory_embeddings = memory_embeddings[idx]
+        # ----- Step 1: UMAP (20D) -----
         umap_reducer = umap.UMAP(
-            n_components=20,
+            n_components=50,
             n_neighbors=30,
             min_dist=0.0,
             metric="cosine",
-            random_state=42
+            random_state=42,
         )
         x_umap = umap_reducer.fit_transform(memory_embeddings)
+        # ----- Step 2: HDBSCAN cluster on 20D UMAP -----
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=20,
+            metric="euclidean",
+            cluster_selection_method="eom"
+        ).fit(x_umap)
+        labels = clusterer.labels_
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+        # ----- Step 3: (optional) t-SNE for plotting only -----
         tsne = TSNE(
             n_components=2,
             perplexity=30,
@@ -290,13 +301,10 @@ class LightningModel(pl.LightningModule):
             random_state=42
         )
         x_2d = tsne.fit_transform(x_umap)
-        db = DBSCAN(eps=0.5, min_samples=10).fit(x_2d)
-        labels = db.labels_
-        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
         df = pd.DataFrame({
             "x": x_2d[:, 0],
             "y": x_2d[:, 1],
-            "cluster": labels.astype(str)
+            "cluster": labels.astype(str),
         })
         df["cluster"] = df["cluster"].replace({"-1": "noise"})
         plt.figure(figsize=(7, 6))
@@ -307,13 +315,13 @@ class LightningModel(pl.LightningModule):
             hue="cluster",
             s=10,
             linewidth=0,
-            legend=False
+            legend=False,
         )
-        plt.title(f"t-SNE Cluster Visualization — {n_clusters} clusters")
+        plt.title(f"UMAP→HDBSCAN clusters (visualized with t-SNE) — {n_clusters} clusters")
         plt.tight_layout()
         self.logger.experiment.log({
             "cluster_visualization": wandb.Image(plt),
             "epoch": self.current_epoch,
-            "num_clusters": n_clusters
+            "num_clusters": n_clusters,
         })
         plt.close()

@@ -26,7 +26,14 @@ class Trainer:
     @property
     def _checkpoint_dir(self) -> str:
         """Construct checkpoint directory path."""
-        return os.path.join(self.config.checkpoint.save_dir, self.name)
+        parts = [
+            f'ViT-{self.config.mae.size}',
+            f'MemoCap{self.config.memory_bank.memory_capacity}', 
+            f'NumSim{self.config.hyperparameters.num_neighbors}', 
+            f'NosimEpochs{self.config.hyperparameters.nosim_train_epochs}'
+        ]
+        p_name = "-".join(parts)
+        return os.path.join(self.config.checkpoint.save_dir, p_name)
 
     def _init_wandb_logger(self) -> WandbLogger:
         """Initialize Weights & Biases logger."""
@@ -41,7 +48,10 @@ class Trainer:
     def _generate_experiment_name(self, cfg: DictConfig) -> str:
         """Generate a structured experiment name from configuration."""
         parts = [
-            f"{cfg.logging.project}"
+            f'ViT-{cfg.mae.size}',
+            f'MemoCap{cfg.memory_bank.memory_capacity}', 
+            f'NumSim{cfg.hyperparameters.num_neighbors}', 
+            f'NosimEpochs{cfg.hyperparameters.nosim_train_epochs}'
         ]
         return "-".join(parts)
 
@@ -82,6 +92,7 @@ class Trainer:
             logger=self.wandb_logger,
             log_every_n_steps=1,
             precision="16-mixed",
+            num_sanity_val_steps=0,
             callbacks=[
                 checkpoint_callback,
                 pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),

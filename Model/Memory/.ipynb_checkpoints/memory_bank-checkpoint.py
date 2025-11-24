@@ -92,7 +92,9 @@ class MemoryBank:
             raise ValueError("Memory bank is empty. Cannot perform recollection.")
         # Update FAISS index with current memory
         self.recollector.update_index(self.memory[:self.stored_size])
-        distances, indices = self.recollector.recollect(query.to(self.device), k)  # [B*M, k]
+        distances, indices = self.recollector.recollect(query.to(self.device), k+1)  # [B*M, k]
+        # Drop the first neighbor (assumed to be self)
+        indices = indices[:, 1:]
         indices = indices.view(B, M * k)
         neighbor_embeddings = self.memory[indices]  # [B, M*k, D]
         return neighbor_embeddings.view(B, M, k, D)

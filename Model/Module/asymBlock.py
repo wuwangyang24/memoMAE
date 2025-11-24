@@ -1,6 +1,7 @@
 import timm
 import torch.nn as nn
-from .asymAttention import AsymAttention 
+from .asymAttention import AsymAttention
+from timm.models.vision_transformer import Attention, Mlp
 
 
 class AsymBlock(nn.Module):
@@ -20,7 +21,7 @@ class AsymBlock(nn.Module):
         norm_layer=nn.LayerNorm,
     ):
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, eps=1e-06)
         self.attn = AsymAttention(
             dim,
             num_heads=num_heads,
@@ -33,17 +34,16 @@ class AsymBlock(nn.Module):
             if drop_path == 0.
             else timm.layers.DropPath(drop_path)
         )
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, eps=1e-06)
         hidden_dim = int(dim * mlp_ratio)
-        self.mlp = nn.Sequential(
-            nn.Linear(dim, hidden_dim),
-            act_layer(),
-            nn.Dropout(drop),
-            nn.Linear(hidden_dim, dim),
-            nn.Dropout(drop),
+        self.mlp = Mlp(
+            in_features=dim,
+            hidden_features=hidden_dim,
+            act_layer=act_layer,
+            drop=drop,
         )
 
-    def forward(self, x, sim_embeddings, return_attn: bool = False):
+    def forward(self, x, sim_embeddings=None, return_attn: bool = False):
         '''
         Forward function.
         Args:
@@ -57,12 +57,12 @@ class AsymBlock(nn.Module):
         if sim_embeddings is not None:
             sim_embeddings = self.norm1(sim_embeddings)
         if return_attn:
-            x, attn = self.attn(self.norm1(x), sim_embeddings, return_attn=True)
-            x = x + self.drop_path(x)
+            out, attn = self.attn(self.norm1(x), sim_embeddings, return_attn=True)
+            x = x + self.drop_path(out)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x, attn
         else:
-            x = self.attn(self.norm1(x), sim_embeddings, return_attn=False)
-            x = x + self.drop_path(x)
+            x = x + self.drop_path(self.attn(self.norm1(x), sim_embeddings, return_attn=False))
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x
+        return x

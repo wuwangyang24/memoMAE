@@ -3,6 +3,7 @@ data:
   val: 'Data/val.txt'
 
 mae:
+  size: 'base'
   img_size: 224
   patch_size: 32
   in_chans: 3

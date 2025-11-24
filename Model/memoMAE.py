@@ -4,7 +4,6 @@ import torch.nn as nn
 from .MAE.mae import MaskedAutoencoderViT
 from .Memory.memory_bank import MemoryBank
 from .Module.asymBlock import AsymBlock
-from .Module.asymAttention import AsymAttention
 
 
 class memoMAE(MaskedAutoencoderViT):
@@ -29,7 +28,6 @@ class memoMAE(MaskedAutoencoderViT):
             embed_dim=config.mae.embed_dim,
             device=f"cuda:{int(os.environ.get('LOCAL_RANK', 0))}"
         )
-        # replace blocks
         self.blocks = nn.ModuleList([
             AsymBlock(config.mae.embed_dim, 
                       config.mae.num_heads, 
@@ -37,8 +35,9 @@ class memoMAE(MaskedAutoencoderViT):
                       qkv_bias=config.mae.qkv_bias, 
                       norm_layer=nn.LayerNorm)
             for i in range(config.mae.depth)])
+        self.initialize_weights()
     
-    def forward_encoder(self, x, mask_ratio=0.75, k_sim_patches=5, return_attn: bool=False):
+    def forward_encoder_memo(self, x, mask_ratio=0.75, k_sim_patches=5, return_attn: bool=False):
         '''
         Forward function of encoder.
         Args:
@@ -50,28 +49,28 @@ class memoMAE(MaskedAutoencoderViT):
             mask: mask indicating which patches are masked
             ids_restore: indices to restore original ordering
         '''
-        x_masked, mask, ids_restore = self.random_masking(x, mask_ratio) # (B, M, D)
-        B, N, D = x.shape
-        M = x_masked.shape[1]
-        ids_keep = torch.nonzero(mask == 0, as_tuple=True)[1].reshape(B, M)
-        pos_embed_kept = torch.gather(
-            self.pos_embed.expand(B, -1, -1),
-            dim=1,
-            index=ids_keep.unsqueeze(-1).expand(-1, -1, D)
-        )
+        # patch encoding images with positional embedding
+        x = self.patch_embed(x)
+        x = x + self.pos_embed
+        # push patches to memory bank
+        self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
+        # random masking
+        x, mask, ids_restore = self.random_masking(x, mask_ratio) # (B, M, D)
+        # retrieve nearest neighbors
         if k_sim_patches > 0:
-            sim_patch_embeds = self.memory_bank.recollect(x_masked, k_sim_patches) # (B, M, K, D)
+            sim_patch_embeds = self.memory_bank.recollect(x, k_sim_patches) # (B, M, K, D)
         else:
             sim_patch_embeds = None  # None when no similar patches
-        x_masked = x_masked + pos_embed_kept
+        attn = None
         for blk in self.blocks:
             if return_attn:
-                x_masked, attn = blk(x_masked, sim_patch_embeds, True)
+                x, attn = blk(x, sim_patch_embeds, True)
             else:
-                x_masked = blk(x_masked, sim_patch_embeds, return_attn)
-        if return_attn:
-            return self.norm(x_masked), mask, ids_restore, attn
-        return self.norm(x_masked), mask, ids_restore
+                x = blk(x, sim_patch_embeds, False)
+        x = self.norm(x)
+        if attn is not None:
+            return x, mask, ids_restore, attn
+        return x, mask, ids_restore
 
     def forward(self, 
                 imgs, 
@@ -91,18 +90,16 @@ class memoMAE(MaskedAutoencoderViT):
             pred: predicted pixel values for masked patches
             mask: mask indicating which patches are masked
         '''
-        x = self.patch_embed(imgs) # (B, N, D)
-        self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
         if nosim_train:
             num_sim_patches = 0
         attn = None
         if return_attn:
-            latents, mask, ids_restore, attn = self.forward_encoder(x, mask_ratio, num_sim_patches, True) # (B, M, D)
+            latents, mask, ids_restore, attn = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches, True)
         else:
-            latents, mask, ids_restore = self.forward_encoder(x, mask_ratio, num_sim_patches) # (B, M, D)
-        pred = self.forward_decoder(latents, ids_restore) # (B, N, p*p*3)
+            latents, mask, ids_restore = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches)
+        pred = self.forward_decoder(latents, ids_restore)
         loss = self.forward_loss(imgs, pred, mask)
-        return {'loss':loss, 'pred':pred, 'mask': mask, 'attn':attn}
+        return {'loss': loss, 'pred': pred, 'mask': mask, 'attn': attn}
         
         
     
