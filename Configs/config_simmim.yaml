@@ -1,21 +1,29 @@
+model: 'simmim'
+size: 'base'
+
 data:
+  img_size: 224
+  patch_size: 32
   train: 'Data/train.txt'
   val: 'Data/val.txt'
 
-mae:
-  size: 'base'
-  img_size: 224
-  patch_size: 32
+vit:
   in_chans: 3
-  embed_dim: 768 
+  drop_path_rate: 0.
+  patch_size: 32
+  mask_ratio: 0.6
+  embed_dim: 768
   depth: 12
   num_heads: 12
-  decoder_embed_dim: 512
-  decoder_depth: 8
-  decoder_num_heads: 16
   mlp_ratio: 4.
   qkv_bias: True
-  norm_pix_loss: False
+  drop_rate: 0.
+  init_values: 
+  use_ape: false
+  use_rpb: false
+  use_shared_rpb: true
+  use_mean_pooling: false
+  encoder_stride: 32
   return_attn: True
 
 memory_bank:
@@ -24,15 +32,14 @@ memory_bank:
   memory_device: "cuda"
 
 hyperparameters:
-  nosim_train_epochs: 20
+  nosim_train_epochs: 500
   memory_mode: "random"
   num_neighbors: 10
 
 training:
-  loss_type: "mae"
   batch_size: 64
   max_epochs: 500
-  val_every_epochs: 5
+  val_every_epochs: 2
   accumulate_grad_batches: 4
 
 optimizer:
@@ -56,6 +63,6 @@ logging:
   log_every_epochs: 1
   logger: 'wandb'
 
-name: 'memomae'
+name: 'memosimmim'
 device: "cuda"
 seed: 42

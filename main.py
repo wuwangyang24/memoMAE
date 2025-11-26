@@ -16,7 +16,7 @@ def load_config(config_path: str) -> dict:
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Training script for memomae')
-    parser.add_argument('--config', type=str, default='Configs/config.yaml', help='Path to the configuration file')
+    parser.add_argument('--config', type=str, default='Configs/config_mae.yaml', help='Path to the configuration file')
     args = parser.parse_args()
 
     # Load configuration

@@ -8,15 +8,17 @@ from lightning.pytorch.profilers import AdvancedProfiler
 from omegaconf import DictConfig
 from Trainer.pl_module import LightningModel
 from Model.memoMAE import memoMAE
+from Model.memoSimMIM import MemoSimMIM
 warnings.filterwarnings("ignore")
 
+_model_map = {'mae': memoMAE, 'simmim': MemoSimMIM}
 
 class Trainer:
     def __init__(self, config: DictConfig) -> None:
         self.config = config
         self.name = self._generate_experiment_name(config)
         self.wandb_logger = self._init_wandb_logger()
-        self.model = memoMAE(config)
+        self.model = _model_map[config.model](config)
         self.pl_module = LightningModel(self.model, config)
         self.wandb_logger.watch(self.model, log="gradients", log_freq=1000)
         self.resume_checkpoint = self._find_latest_checkpoint(self._checkpoint_dir)
@@ -26,7 +28,8 @@ class Trainer:
     def _checkpoint_dir(self) -> str:
         """Construct checkpoint directory path."""
         parts = [
-            f'ViT-{self.config.mae.size}',
+            f'{self.config.model}',
+            f'ViT-{self.config.size}',
             f'MemoCap{self.config.memory_bank.memory_capacity}', 
             f'NumSim{self.config.hyperparameters.num_neighbors}', 
             f'NosimEpochs{self.config.hyperparameters.nosim_train_epochs}'
@@ -47,7 +50,8 @@ class Trainer:
     def _generate_experiment_name(self, cfg: DictConfig) -> str:
         """Generate a structured experiment name from configuration."""
         parts = [
-            f'ViT-{cfg.mae.size}',
+            f'{cfg.model}',
+            f'ViT-{cfg.size}',
             f'MemoCap{cfg.memory_bank.memory_capacity}', 
             f'NumSim{cfg.hyperparameters.num_neighbors}', 
             f'NosimEpochs{cfg.hyperparameters.nosim_train_epochs}'
@@ -92,7 +96,7 @@ class Trainer:
             logger=self.wandb_logger,
             log_every_n_steps=1,
             precision="16-mixed",
-            num_sanity_val_steps=0,
+            num_sanity_val_steps=1,
             callbacks=[
                 checkpoint_callback,
                 # pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),

@@ -1,0 +1,64 @@
+model: 'mae'
+size: 'base'
+
+data:
+  img_size: 224
+  patch_size: 32
+  train: 'Data/train.txt'
+  val: 'Data/val.txt'
+
+vit:
+  img_size: 224
+  patch_size: 32
+  in_chans: 3
+  embed_dim: 768 
+  depth: 12
+  num_heads: 12
+  decoder_embed_dim: 512
+  decoder_depth: 8
+  decoder_num_heads: 16
+  mlp_ratio: 4.
+  qkv_bias: True
+  norm_pix_loss: False
+  return_attn: True
+
+memory_bank:
+  memory_capacity: 100000
+  embed_dim: 768
+  memory_device: "cuda"
+
+hyperparameters:
+  nosim_train_epochs: 20
+  memory_mode: "random"
+  num_neighbors: 10
+
+training:
+  batch_size: 64
+  max_epochs: 500
+  val_every_epochs: 5
+  accumulate_grad_batches: 4
+
+optimizer:
+  optim: "adamw"
+  learning_rate: 1e-4
+  beta1: 0.9
+  beta2: 0.999
+  eta_min: 1e-7
+  weight_decay: 0.05
+  lr_scheduler: "cosine"
+  warmup_epochs: 20
+  start_factor: 0.1
+
+checkpoint:
+  save_every_epochs: 50
+  save_dir: "checkpoints"
+
+logging:    
+  project: 'memomae'
+  entity: 'wwy'
+  log_every_epochs: 1
+  logger: 'wandb'
+
+name: 'memomae'
+device: "cuda"
+seed: 42

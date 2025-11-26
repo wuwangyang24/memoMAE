@@ -20,9 +20,9 @@ class LightningModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
         self.model = model
-        self.patch_size = config.mae.patch_size
+        self.patch_size = config.data.patch_size
         self.nosim_train_epochs = config.hyperparameters.nosim_train_epochs
-        self.return_attn = config.mae.return_attn
+        self.return_attn = config.vit.return_attn
         # Extract optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
@@ -84,8 +84,19 @@ class LightningModel(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         # visualize memory bank clusters
-        if self.model.memory_bank.stored_size > 0:
-            self.visualize_cluster(self.model.memory_bank.memory)
+        # detect where memory_bank lives
+        if hasattr(self.model, "memory_bank"):
+            mb = self.model.memory_bank
+        elif hasattr(self.model.encoder, "memory_bank"):
+            mb = self.model.encoder.memory_bank
+        else:
+            mb = None
+        # if no memory bank found
+        if mb is None:
+            return
+        # proceed only if it has something stored
+        if hasattr(mb, "stored_size") and mb.stored_size > 0:
+            self.visualize_cluster(mb.memory)
         # log attention distribution
         if len(self.accu_attn_scores) > 0:
             attn_scores = torch.cat(self.accu_attn_scores, dim=0)
@@ -175,6 +186,8 @@ class LightningModel(pl.LightningModule):
         mask: (B, L)  with 1 = masked, 0 = visible (MAE-style)
         returns reconstructed image: (B, 3, H, W)
         """
+        if len(pred.shape) == 4:
+            return pred
         B, L, _ = pred.shape
         p = self.patch_size
         C = 3
@@ -194,6 +207,8 @@ class LightningModel(pl.LightningModule):
         mask: (B, L)
         returns masked image (visible patches kept, masked -> 0)
         """
+        if len(mask.shape) == 4:
+            return imgs * (1-mask)
         B, C, H, W = imgs.shape
         p = self.patch_size
         h = H // p
