@@ -95,7 +95,7 @@ class MemoryBank:
         distances, indices = self.recollector.recollect(query.to(self.device), k+1)  # [B*M, k]
         # Drop the first neighbor (assumed to be self)
         indices = indices[:, 1:]
-        indices = indices.view(B, M * k)
+        indices = indices.reshape(B, M * k)
         neighbor_embeddings = self.memory[indices]  # [B, M*k, D]
         return neighbor_embeddings.view(B, M, k, D)
 

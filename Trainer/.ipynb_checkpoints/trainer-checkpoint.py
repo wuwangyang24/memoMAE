@@ -12,7 +12,6 @@ warnings.filterwarnings("ignore")
 
 
 class Trainer:
-    """High-level trainer for Vision Transformer / Data2Vec / JEPA models using Lightning."""
     def __init__(self, config: DictConfig) -> None:
         self.config = config
         self.name = self._generate_experiment_name(config)
@@ -80,6 +79,7 @@ class Trainer:
             filename='checkpoint_{epoch}',
             every_n_epochs=self.config.checkpoint.save_every_epochs,
             save_top_k=1,
+            save_last=True,
         )
         profiler = AdvancedProfiler(filename="advanced_profiler")
 
@@ -95,8 +95,8 @@ class Trainer:
             num_sanity_val_steps=0,
             callbacks=[
                 checkpoint_callback,
-                pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),
-                pl.pytorch.callbacks.ModelSummary(max_depth=4),
+                # pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),
+                # pl.pytorch.callbacks.ModelSummary(max_depth=4),
                 #pl.pytorch.callbacks.DeviceStatsMonitor(),
             ],
             enable_model_summary=True,
@@ -129,6 +129,5 @@ class Trainer:
                     self.pl_trainer.profiler.summary()
                 except Exception as e:
                     print(f"Could not write profiler summary: {e}")
-    
             import wandb
             wandb.finish()

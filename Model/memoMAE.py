@@ -77,7 +77,9 @@ class memoMAE(MaskedAutoencoderViT):
                 mask_ratio=0.75, 
                 nosim_train: bool=False, 
                 num_sim_patches: int=5, 
-                return_attn: bool=False):
+                return_attn: bool=False,
+                return_latents: bool=False
+               ):
         '''
         Forward function.
         Args:
@@ -99,6 +101,8 @@ class memoMAE(MaskedAutoencoderViT):
             latents, mask, ids_restore = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches)
         pred = self.forward_decoder(latents, ids_restore)
         loss = self.forward_loss(imgs, pred, mask)
+        if return_latents:
+            return {'loss': loss, 'pred': pred, 'mask': mask, 'attn': attn, 'latents': latents}
         return {'loss': loss, 'pred': pred, 'mask': mask, 'attn': attn}
         
         

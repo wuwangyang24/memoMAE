@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import lightning as pl
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 from typing import Any, Optional, Dict
-import umap.umap_ as umap
 from sklearn.manifold import TSNE
-from sklearn.cluster import DBSCAN
+import umap.umap_ as umap
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 from torchvision.utils import make_grid
 
@@ -36,6 +36,8 @@ class LightningModel(pl.LightningModule):
         self.max_epochs = config.training.max_epochs
         # attention storage for logging
         self.accu_attn_scores = []
+        self.feats = []
+        self.labels = []
         
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> Any:
         nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during training
@@ -49,7 +51,9 @@ class LightningModel(pl.LightningModule):
     def validation_step(self, batch: torch.Tensor, batch_idx: int) -> Dict[str, Any]:
         nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during validation
         imgs = batch[0]["images"] 
-        outputs = self.model(imgs, nosim_train=nosim_train, return_attn=self.return_attn)
+        labels = batch[0]['labels']
+        outputs = self.model(imgs, mask_ratio=0, nosim_train=nosim_train, return_attn=self.return_attn, return_latents=True)
+        latents = outputs.get('latents', None)
         loss = outputs.get('loss', None)
         pred = outputs.get('pred', None)
         mask = outputs.get('mask', None)
@@ -73,6 +77,9 @@ class LightningModel(pl.LightningModule):
                 rec = self.reconstruct_from_pred(pred, mask)
                 masked = self.build_masked_image(imgs, mask)
                 self.log_reconstruction_images(imgs, masked, rec, stage="val")
+        # store latents for linear probing
+        self.feats.append(latents.mean(1).detach().cpu())
+        self.labels.append(labels.squeeze(1).detach().cpu().to(torch.long))
         return {"val_loss": loss}
 
     def on_validation_epoch_end(self):
@@ -84,6 +91,41 @@ class LightningModel(pl.LightningModule):
             attn_scores = torch.cat(self.accu_attn_scores, dim=0)
             self.log_attention_distribution(attn_scores)
             self.accu_attn_scores = []  # reset for next epoch
+        # linear probing
+        self.feats = torch.cat(self.feats, dim=0)
+        self.labels = torch.cat(self.labels, dim=0)
+        N, D = self.feats.shape
+        num_classes = int(self.labels.max().item()) + 1
+        # ---- 1. Shuffle indices ----
+        perm = torch.randperm(N)
+        split = int(0.8 * N)
+        train_idx = perm[:split]
+        test_idx  = perm[split:]    
+        feats_train = self.feats[train_idx]
+        labels_train = self.labels[train_idx]   
+        feats_test = self.feats[test_idx]
+        labels_test = self.labels[test_idx]  
+        # ---- 2. Create linear classifier ----
+        clf = torch.nn.Linear(D, num_classes)
+        optimizer = torch.optim.Adam(clf.parameters(), lr=1e-3)
+        criterion = torch.nn.CrossEntropyLoss()
+        epochs = 100
+        # ---- 3. Train classifier on 80% split ----
+        with torch.enable_grad():
+            for _ in tqdm(range(epochs)):
+                logits = clf(feats_train)
+                loss = criterion(logits, labels_train)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+        # ---- 4. Evaluate on 20% split ----
+        with torch.no_grad():
+            preds = clf(feats_test).argmax(dim=1)
+            acc = (preds == labels_test).float().mean().item()
+        # ---- 5. Log the held-out linear eval accuracy ----
+        self.log("linear_probing_acc", acc, prog_bar=True)
+        self.feats = []
+        self.labels = []
 
     def configure_optimizers(self) -> Dict[str, Any]:
         # ---- compute steps ----
@@ -140,7 +182,8 @@ class LightningModel(pl.LightningModule):
         pred = pred.view(B, L, C, p, p)
         # apply mask: only fill masked patches, keep visible patches as 0 here
         mask_ = mask.view(B, L, 1, 1, 1)                    # (B, L, 1, 1, 1)
-        pred = pred * mask_
+        if not torch.all(mask_ == 0).item():
+            pred = pred * mask_
         # unpatchify to full image
         rec = self.model.unpatchify(pred)                         # (B, 3, H, W)
         return rec

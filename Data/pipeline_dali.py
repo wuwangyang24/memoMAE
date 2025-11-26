@@ -14,18 +14,17 @@ class TrainPipeline(Pipeline):
             shard_id=shard_id,
             num_shards=num_shards,
             name="Reader",
+            pad_last_batch=True,
+            stick_to_shard=True,
         )
 
     def define_graph(self):
         images, labels = self.reader
-
         # Mixed = CPU stage + GPU decode
         images = fn.decoders.image(images, device="mixed", output_type=types.RGB)
-
         # GPU augmentations
         images = fn.random_resized_crop(images, size=(224, 224))
         images = fn.flip(images, horizontal=fn.random.coin_flip())
-
         images = fn.crop_mirror_normalize(
             images,
             dtype=types.FLOAT,
@@ -33,7 +32,6 @@ class TrainPipeline(Pipeline):
             mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
             std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
         )
-
         return images, labels
     
 
@@ -49,6 +47,7 @@ class ValPipeline(Pipeline):
             shard_id=shard_id,
             num_shards=num_shards,
             name="Reader",
+            stick_to_shard=True
         )
 
     def define_graph(self):
