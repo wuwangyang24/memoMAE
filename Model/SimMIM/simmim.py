@@ -41,9 +41,8 @@ class VisionTransformerForSimMIM(VisionTransformer):
 
     def forward(self, 
                 x, 
-                mask, 
-                nosim_train, 
-                k_sim_patches: int=10, 
+                mask,
+                num_sim_patches: int=10, 
                 return_attn: bool=False):
         x = self.patch_embed(x)
         assert mask is not None
@@ -60,16 +59,16 @@ class VisionTransformerForSimMIM(VisionTransformer):
         keep = (w.squeeze(-1) == 0)
         self.memory_bank.memorize(x[keep])
         # retrieve nearest neighbors
-        if k_sim_patches > 0:
-            sim_patch_embeds = self.memory_bank.recollect(x, k_sim_patches) # (B, M, K, D)
+        if num_sim_patches > 0:
+            sim_patch_embeds = self.memory_bank.recollect(x[keep].view(B, -1, self.embed_dim), num_sim_patches) # (B, L, M, D)
         else:
             sim_patch_embeds = None  # None when no similar patches
         attn = None
         for blk in self.blocks:
             if return_attn:
-                x, attn = blk(x, sim_patch_embeds, True)
+                x, attn = blk(x, mask, sim_patch_embeds, True)
             else:
-                x = blk(x, sim_patch_embeds, False)
+                x = blk(x, mask, sim_patch_embeds, False)
         x = self.norm(x)
 
         if attn is not None:

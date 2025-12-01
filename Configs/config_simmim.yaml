@@ -19,10 +19,12 @@ vit:
   qkv_bias: True
   drop_rate: 0.
   init_values: 
-  use_ape: false
-  use_rpb: false
-  use_shared_rpb: true
-  use_mean_pooling: false
+  use_ape: False
+  use_rpb: False
+  use_abs_pos_emb: True
+  use_rel_pos_bias: False
+  use_shared_rel_pos_bias: False
+  use_mean_pooling: False
   encoder_stride: 32
   return_attn: True
 
@@ -32,14 +34,14 @@ memory_bank:
   memory_device: "cuda"
 
 hyperparameters:
-  nosim_train_epochs: 500
+  nosim_train_epochs: 20
   memory_mode: "random"
   num_neighbors: 10
 
 training:
   batch_size: 64
   max_epochs: 500
-  val_every_epochs: 2
+  val_every_epochs: 10
   accumulate_grad_batches: 4
 
 optimizer:

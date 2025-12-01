@@ -30,6 +30,7 @@ class Trainer:
         parts = [
             f'{self.config.model}',
             f'ViT-{self.config.size}',
+            f'Patch-{self.config.data.patch_size}',
             f'MemoCap{self.config.memory_bank.memory_capacity}', 
             f'NumSim{self.config.hyperparameters.num_neighbors}', 
             f'NosimEpochs{self.config.hyperparameters.nosim_train_epochs}'
@@ -52,6 +53,7 @@ class Trainer:
         parts = [
             f'{cfg.model}',
             f'ViT-{cfg.size}',
+            f'Patch-{cfg.data.patch_size}',
             f'MemoCap{cfg.memory_bank.memory_capacity}', 
             f'NumSim{cfg.hyperparameters.num_neighbors}', 
             f'NosimEpochs{cfg.hyperparameters.nosim_train_epochs}'
@@ -59,6 +61,15 @@ class Trainer:
         return "-".join(parts)
 
     def _find_latest_checkpoint(self, checkpoint_dir: str) -> Optional[str]:
+        def pick_checkpoint(files):
+            numbered = []
+            for f in files:
+                nums = re.findall(r'\d+', f)
+                if nums:  # keep only those with digits
+                    numbered.append((int(nums[-1]), f))
+            if not numbered:
+                return None  # or raise an error
+            return max(numbered, key=lambda x: x[0])[1]
         """Return path to latest checkpoint or None if not found."""
         if not os.path.exists(checkpoint_dir):
             print("No checkpoint directory available")
@@ -68,7 +79,7 @@ class Trainer:
             if not checkpoints:
                 print("No checkpoint files found")
                 return None
-            latest_ckpt = max(checkpoints, key=lambda f: int(re.findall(r'\d+', f)[-1]))
+            latest_ckpt = pick_checkpoint(checkpoints)
             checkpoint_path = os.path.join(checkpoint_dir, latest_ckpt)
             print(f"Found checkpoint: {checkpoint_path}")
             return checkpoint_path
@@ -89,6 +100,7 @@ class Trainer:
 
         return pl.Trainer(
             accelerator="gpu",
+            devices=[self.config.device],
             max_epochs=self.config.training.max_epochs,
             gradient_clip_val=1.0,
             accumulate_grad_batches=self.config.training.accumulate_grad_batches,
@@ -96,11 +108,11 @@ class Trainer:
             logger=self.wandb_logger,
             log_every_n_steps=1,
             precision="16-mixed",
-            num_sanity_val_steps=1,
+            num_sanity_val_steps=0,
             callbacks=[
                 checkpoint_callback,
-                # pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),
-                # pl.pytorch.callbacks.ModelSummary(max_depth=4),
+                pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),
+                pl.pytorch.callbacks.ModelSummary(max_depth=4),
                 #pl.pytorch.callbacks.DeviceStatsMonitor(),
             ],
             enable_model_summary=True,

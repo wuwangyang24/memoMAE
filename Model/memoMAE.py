@@ -11,30 +11,30 @@ class memoMAE(MaskedAutoencoderViT):
     Memoized Masked Autoencoder with Asymmetric Attention
     '''
     def __init__(self, config):
-        super().__init__(img_size=config.mae.img_size,
-                         patch_size=config.mae.patch_size,
-                         in_chans=config.mae.in_chans,
-                         embed_dim=config.mae.embed_dim,
-                         depth=config.mae.depth,
-                         num_heads=config.mae.num_heads,
-                         decoder_embed_dim=config.mae.decoder_embed_dim,
-                         decoder_depth=config.mae.decoder_depth,
-                         decoder_num_heads=config.mae.decoder_num_heads,
-                         mlp_ratio=config.mae.mlp_ratio,
+        super().__init__(img_size=config.vit.img_size,
+                         patch_size=config.vit.patch_size,
+                         in_chans=config.vit.in_chans,
+                         embed_dim=config.vit.embed_dim,
+                         depth=config.vit.depth,
+                         num_heads=config.vit.num_heads,
+                         decoder_embed_dim=config.vit.decoder_embed_dim,
+                         decoder_depth=config.vit.decoder_depth,
+                         decoder_num_heads=config.vit.decoder_num_heads,
+                         mlp_ratio=config.vit.mlp_ratio,
                          norm_layer=nn.LayerNorm,
-                         norm_pix_loss=config.mae.norm_pix_loss)
+                         norm_pix_loss=config.vit.norm_pix_loss)
         self.memory_bank = MemoryBank(
             capacity=config.memory_bank.memory_capacity,
-            embed_dim=config.mae.embed_dim,
-            device=f"cuda:{int(os.environ.get('LOCAL_RANK', 0))}"
+            embed_dim=config.vit.embed_dim,
+            device=f"cuda:{config.device}"
         )
         self.blocks = nn.ModuleList([
-            AsymBlock(config.mae.embed_dim, 
-                      config.mae.num_heads, 
-                      config.mae.mlp_ratio, 
-                      qkv_bias=config.mae.qkv_bias, 
+            AsymBlock(config.vit.embed_dim, 
+                      config.vit.num_heads, 
+                      config.vit.mlp_ratio, 
+                      qkv_bias=config.vit.qkv_bias, 
                       norm_layer=nn.LayerNorm)
-            for i in range(config.mae.depth)])
+            for i in range(config.vit.depth)])
         self.initialize_weights()
     
     def forward_encoder_memo(self, x, mask_ratio=0.75, k_sim_patches=5, return_attn: bool=False):
@@ -64,9 +64,9 @@ class memoMAE(MaskedAutoencoderViT):
         attn = None
         for blk in self.blocks:
             if return_attn:
-                x, attn = blk(x, sim_patch_embeds, True)
+                x, attn = blk(x, sim_embeddings=sim_patch_embeds, return_attn=True)
             else:
-                x = blk(x, sim_patch_embeds, False)
+                x = blk(x, sim_embeddings=sim_patch_embeds, return_attn=False)
         x = self.norm(x)
         if attn is not None:
             return x, mask, ids_restore, attn

@@ -34,7 +34,9 @@ class MemoSimMIM(nn.Module):
                 return_attn: bool=False, 
                 return_latents: bool=False):
         mask = self.mask_generator(batch_size=x.shape[0], mask_ratio=mask_ratio).to(x.device)
-        outputs = self.encoder(x, mask, nosim_train, num_sim_patches)
+        if nosim_train:
+            num_sim_patches = 0
+        outputs = self.encoder(x, mask, num_sim_patches, return_attn)
         z = outputs.get('z', None)
         attn = outputs.get('attn', None)
         # reshape z for decoding
@@ -98,9 +100,9 @@ def build_simmim(config):
             drop_path_rate=config.vit.drop_path_rate,
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
             init_values=config.vit.init_values,
-            use_abs_pos_emb=config.vit.use_ape,
-            use_rel_pos_bias=config.vit.use_rpb,
-            use_shared_rel_pos_bias=config.vit.use_shared_rpb,
+            use_abs_pos_emb=config.vit.use_abs_pos_emb,
+            use_rel_pos_bias=config.vit.use_rel_pos_bias,
+            use_shared_rel_pos_bias=config.vit.use_shared_rel_pos_bias,
             use_mean_pooling=config.vit.use_mean_pooling,
             memory_capacity=config.memory_bank.memory_capacity
         )

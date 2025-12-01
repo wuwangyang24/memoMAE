@@ -26,6 +26,37 @@ class AsymAttention(nn.Module):
         self.proj = nn.Linear(dim, dim, bias=True)
         self.proj_drop = nn.Dropout(proj_drop)
 
+    def _expand(self, mask, inputs, fill_value=0.0):
+        """
+        Expand inputs from (B, H, L, Dh) back to (B, H, N, Dh)
+        using a boolean mask: 0 = keep, 1 = masked.
+    
+        fill_value: value for masked positions (0, -inf, etc.)
+        """
+        # mask: (B, N, 1)
+        B, H, L, Dh = inputs.shape
+        _, N = mask.shape
+        # True where we KEEP (mask == 0)
+        keep_bool = (mask == 0)   # (B, N)
+        # Number of kept tokens per batch (assumed constant across batch)
+        L = keep_bool.sum(dim=1)[0].item()
+        # Build idx_keep (B, L)
+        _, pos_idx = keep_bool.nonzero(as_tuple=True)
+        idx_keep = pos_idx.view(B, L)
+        # Create full output tensor, filled with fill_value
+        outputs = torch.full(
+            (B, H, N, Dh),
+            fill_value,
+            device=inputs.device,
+            dtype=inputs.dtype
+        )
+        # Expand idx_keep to match scatter shape
+        idx_expanded = idx_keep.unsqueeze(1).unsqueeze(-1).expand(B, H, L, Dh)
+        # Scatter inputs into correct N positions
+        outputs.scatter_(-2, idx_expanded, inputs)
+        return outputs
+
+
     def forward_base(self, x, return_attn: bool = False):
         """
         Standard multi-head self-attention forward function.
@@ -57,52 +88,76 @@ class AsymAttention(nn.Module):
             return x, attn
         return x
 
-    def forward_asym(self, x, sim_embeddings, return_attn: bool = False):
+    def forward_asym(self, x, mask, sim_embeddings, return_attn: bool = False):
         '''
         Forward function.
         Args:
             x: input features with shape (B, N, D)
-            sim_embeddings: similar embeddings with shape (B, N, M, D)
+            sim_embeddings: similar embeddings with shape (B, L, M, D)
             attn_mask: attention mask
         Returns:
             output features with shape (B, N, D)
         '''
         B, N, D = x.shape
-        _, _, M, _ = sim_embeddings.shape
+        _, L, M, _ = sim_embeddings.shape
         H = self.num_heads
         Dh = self.head_dim
+        reindex_attn = N > L
+
         # ---- 1. Project Q ----
-        q = self.q(x).view(B, N, H, Dh).permute(0, 2, 1, 3)        # (B, H, N, Dh)
+        q = self.q(x).view(B, N, H, Dh).permute(0, 2, 1, 3)  #(B, H, N, Dh)
+        # if masked patches are also passed in, remove them for q_sim
+        if reindex_attn:
+            mask_bool = (1-mask).bool()
+            mask_flat = mask_bool.unsqueeze(1).expand(B, H, N).reshape(B * H, N)
+            q_sim = q.reshape(B * H, N, Dh)[mask_flat].reshape(B, H, -1, Dh)  #(B, H, L, Dh)
+        else:
+            q_sim = None
+
         # ---- 2. K, V for self patches ----
         k_x = self.k(x).view(B, N, H, Dh).permute(0, 2, 1, 3)            # (B, H, N, Dh)
         v_x = self.v(x).view(B, N, H, Dh).permute(0, 2, 1, 3)            # (B, H, N, Dh)
+        
         # ---- 3. K, V for similar patches (per query) ----
-        k_sim = self.k(sim_embeddings).view(B, N, M, H, Dh).permute(0, 3, 1, 2, 4)  # (B, H, N, M, Dh)
-        v_sim = self.v(sim_embeddings).view(B, N, M, H, Dh).permute(0, 3, 1, 2, 4)  # (B, H, N, M, Dh)
+        k_sim = self.k(sim_embeddings).view(B, L, M, H, Dh).permute(0, 3, 1, 2, 4)  # (B, H, L, M, Dh)
+        v_sim = self.v(sim_embeddings).view(B, L, M, H, Dh).permute(0, 3, 1, 2, 4)  # (B, H, L, M, Dh)  
+        
         # ---- 4. Attention logits ----
-        # self-part: (B, H, N, Dh) x (B, H, Dh, N) → (B, H, N, N)
+        # SELF-part: (B, H, N, Dh) x (B, H, Dh, N) → (B, H, N, N)
         logits_self = torch.matmul(q, k_x.transpose(-2, -1)) * self.scale
-        # sim-part (per n): inner product of q[..., n, :] with each of its M neighbors
-        # q:     (B, H, N, 1, Dh)
-        # k_sim: (B, H, N, M, Dh)
-        # → (B, H, N, M)
-        logits_sim = (q.unsqueeze(3) * k_sim).sum(dim=-1) * self.scale  
+        
+        # SIM-part: (B, H, L, 1, Dh) x (B, H, L, M, Dh) → (B, H, N, M)
+        if q_sim is not None:
+            logits_sim = (q_sim.unsqueeze(3) * k_sim).sum(dim=-1) * self.scale  # (B, H, L, M)
+            logits_sim = self._expand(mask, logits_sim, fill_value=float('-inf'))  # (B, H, N, M)
+        else:
+            logits_sim = (q.unsqueeze(3) * k_sim).sum(dim=-1) * self.scale 
+            
         # Combine: (B, H, N, N+M)
         logits = torch.cat([logits_self, logits_sim], dim=-1)
+        
         # ---- 5. Softmax over all N+M keys ----
         attn = logits.softmax(dim=-1)
         attn = self.attn_drop(attn)                                # (B, H, N, N+M)
         # Split back
         attn_self = attn[..., :N]                                  # (B, H, N, N)
         attn_sim  = attn[..., N:]                                  # (B, H, N, M)
+        
         # ---- 6. Weighted sum for values ----
-        # self values: (B, H, N, Dh), attn_self: (B, H, N, N)
+        # SELF values: (B, H, N, Dh), attn_self: (B, H, N, N)
         out_self = torch.matmul(attn_self, v_x)                    # (B, H, N, Dh)
-        # sim values: per n, weights over its M neighbors
-        # attn_sim: (B, H, N, M) → (B, H, N, M, 1)
-        out_sim = (attn_sim.unsqueeze(-1) * v_sim).sum(dim=3)      # (B, H, N, Dh)
+        # SIM values: per n, weights over its M neighbors
+        # attn_sim: (B, H, L, M) → (B, H, L, M, 1)
+        # if N != L, select L from N
+        if reindex_attn:
+            attn_sim = attn_sim.view(B * H, N, M)[mask_flat].reshape(B, H, -1, M)  #(B, H, L, M)
+            out_sim = (attn_sim.unsqueeze(-1) * v_sim).sum(dim=3)  #(B, H, L, Dh)
+            out_sim = self._expand(mask, out_sim, 0.)  #(B, H, L, Dh) --> (B, H, N, Dh)
+        else:
+            out_sim = (attn_sim.unsqueeze(-1) * v_sim).sum(dim=3)  # (B, H, N, Dh)
+
         # total output per query
-        out = out_self + out_sim                                   # (B, H, N, Dh)
+        out = out_self + out_sim  # (B, H, N, Dh)
         # merge heads back to (B, N, D)
         out = out.permute(0, 2, 1, 3).reshape(B, N, D)
         out = self.proj(out)
@@ -111,7 +166,7 @@ class AsymAttention(nn.Module):
             return out, attn
         return out
     
-    def forward(self, x, sim_embeddings=None, return_attn: bool = False):
+    def forward(self, x, mask=None, sim_embeddings=None, return_attn: bool = False):
         '''
         Forward function that selects between asymmetric and standard attention.
         Args:
@@ -123,7 +178,7 @@ class AsymAttention(nn.Module):
             output features with shape (B, N, D)
         '''
         if sim_embeddings is not None:
-            return self.forward_asym(x, sim_embeddings, return_attn)
+            return self.forward_asym(x, mask, sim_embeddings, return_attn)
         else:
             return self.forward_base(x, return_attn)
 

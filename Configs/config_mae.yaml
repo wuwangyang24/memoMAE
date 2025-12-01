@@ -1,15 +1,15 @@
 model: 'mae'
-size: 'base'
+size: 'B'
 
 data:
   img_size: 224
-  patch_size: 32
+  patch_size: 16
   train: 'Data/train.txt'
   val: 'Data/val.txt'
 
 vit:
   img_size: 224
-  patch_size: 32
+  patch_size: 16
   in_chans: 3
   embed_dim: 768 
   depth: 12
@@ -21,6 +21,7 @@ vit:
   qkv_bias: True
   norm_pix_loss: False
   return_attn: True
+  mask_ratio: 0.75
 
 memory_bank:
   memory_capacity: 100000
@@ -28,14 +29,14 @@ memory_bank:
   memory_device: "cuda"
 
 hyperparameters:
-  nosim_train_epochs: 20
+  nosim_train_epochs: 0
   memory_mode: "random"
   num_neighbors: 10
 
 training:
   batch_size: 64
   max_epochs: 500
-  val_every_epochs: 5
+  val_every_epochs: 10
   accumulate_grad_batches: 4
 
 optimizer:
@@ -60,5 +61,5 @@ logging:
   logger: 'wandb'
 
 name: 'memomae'
-device: "cuda"
+device: 1
 seed: 42

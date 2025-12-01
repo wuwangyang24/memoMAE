@@ -327,26 +327,3 @@ class VisionTransformer(nn.Module):
         x = self.forward_features(x)
         x = self.head(x)
         return x
-
-
-def build_vit(config):
-    model = VisionTransformer(
-        img_size=config.DATA.IMG_SIZE,
-        patch_size=config.MODEL.VIT.PATCH_SIZE,
-        in_chans=config.MODEL.VIT.IN_CHANS,
-        num_classes=config.MODEL.NUM_CLASSES,
-        embed_dim=config.MODEL.VIT.EMBED_DIM,
-        depth=config.MODEL.VIT.DEPTH,
-        num_heads=config.MODEL.VIT.NUM_HEADS,
-        mlp_ratio=config.MODEL.VIT.MLP_RATIO,
-        qkv_bias=config.MODEL.VIT.QKV_BIAS,
-        drop_rate=config.MODEL.DROP_RATE,
-        drop_path_rate=config.MODEL.DROP_PATH_RATE,
-        norm_layer=partial(nn.LayerNorm, eps=1e-6),
-        init_values=config.MODEL.VIT.INIT_VALUES,
-        use_abs_pos_emb=config.MODEL.VIT.USE_APE,
-        use_rel_pos_bias=config.MODEL.VIT.USE_RPB,
-        use_shared_rel_pos_bias=config.MODEL.VIT.USE_SHARED_RPB,
-        use_mean_pooling=config.MODEL.VIT.USE_MEAN_POOLING)
-
-    return model

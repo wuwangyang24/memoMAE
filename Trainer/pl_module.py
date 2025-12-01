@@ -23,6 +23,7 @@ class LightningModel(pl.LightningModule):
         self.patch_size = config.data.patch_size
         self.nosim_train_epochs = config.hyperparameters.nosim_train_epochs
         self.return_attn = config.vit.return_attn
+        self.mask_ratio = config.vit.mask_ratio
         # Extract optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
@@ -41,7 +42,7 @@ class LightningModel(pl.LightningModule):
         
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> Any:
         nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during training
-        loss = self.model(batch[0]['images'], nosim_train=nosim_train, return_attn=self.return_attn).get('loss', None)
+        loss = self.model(batch[0]['images'], mask_ratio=self.mask_ratio, nosim_train=nosim_train, return_attn=self.return_attn).get('loss', None)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         # --- Log LR every step ---
         lr = self.trainer.optimizers[0].param_groups[0]["lr"]
@@ -52,21 +53,14 @@ class LightningModel(pl.LightningModule):
         nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during validation
         imgs = batch[0]["images"] 
         labels = batch[0]['labels']
-        outputs = self.model(imgs, mask_ratio=0, nosim_train=nosim_train, return_attn=self.return_attn, return_latents=True)
-        latents = outputs.get('latents', None)
-        loss = outputs.get('loss', None)
-        pred = outputs.get('pred', None)
-        mask = outputs.get('mask', None)
+        return_attn = self.return_attn and (batch_idx % 10 == 0)
+        outputs = self.model(imgs, mask_ratio=0, nosim_train=nosim_train, return_attn=return_attn, return_latents=True)
+        imgs = imgs.detach().cpu()
+        labels = labels.detach().cpu()
+        latents = outputs.get('latents', None).detach().cpu()
+        pred = outputs.get('pred', None).detach().cpu()
+        mask = outputs.get('mask', None).detach().cpu()
         attn_scores = outputs.get('attn', None)
-        # log val loss
-        self.log(
-            "val_loss",
-            loss,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
         # store attention scores for logging
         if attn_scores is not None:
             self.accu_attn_scores.append(attn_scores.detach().cpu())
@@ -78,9 +72,8 @@ class LightningModel(pl.LightningModule):
                 masked = self.build_masked_image(imgs, mask)
                 self.log_reconstruction_images(imgs, masked, rec, stage="val")
         # store latents for linear probing
-        self.feats.append(latents.mean(1).detach().cpu())
-        self.labels.append(labels.squeeze(1).detach().cpu().to(torch.long))
-        return {"val_loss": loss}
+        self.feats.append(latents.mean(1))
+        self.labels.append(labels.squeeze(1).to(torch.long))
 
     def on_validation_epoch_end(self):
         # visualize memory bank clusters

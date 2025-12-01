@@ -43,26 +43,29 @@ class AsymBlock(nn.Module):
             drop=drop,
         )
 
-    def forward(self, x, sim_embeddings=None, return_attn: bool = False):
+    def forward(self, x, mask=None, sim_embeddings=None, return_attn: bool = False):
         '''
         Forward function.
         Args:
             x: input features with shape (B, N, D)
+            mask: shape (B, N, 1)
             sim_embeddings: similar embeddings with shape (B, N, K, D)
             return_attn: whether to return attention weights
         Returns:
             output features with shape (B, N, D)
             (optional) attention weights with shape (B, num_heads, N, N+K)
         '''
+        if mask is not None:
+            mask = mask.view(x.shape[0],-1)
         if sim_embeddings is not None:
             sim_embeddings = self.norm1(sim_embeddings)
         if return_attn:
-            out, attn = self.attn(self.norm1(x), sim_embeddings, return_attn=True)
+            out, attn = self.attn(self.norm1(x), mask, sim_embeddings, return_attn=True)
             x = x + self.drop_path(out)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x, attn
         else:
-            x = x + self.drop_path(self.attn(self.norm1(x), sim_embeddings, return_attn=False))
+            x = x + self.drop_path(self.attn(self.norm1(x), mask, sim_embeddings, return_attn=False))
             x = x + self.drop_path(self.mlp(self.norm2(x)))
             return x
         return x
