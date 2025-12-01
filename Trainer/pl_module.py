@@ -76,8 +76,6 @@ class LightningModel(pl.LightningModule):
         self.labels.append(labels.squeeze(1).to(torch.long))
 
     def on_validation_epoch_end(self):
-        # visualize memory bank clusters
-        # detect where memory_bank lives
         if hasattr(self.model, "memory_bank"):
             mb = self.model.memory_bank
         elif hasattr(self.model.encoder, "memory_bank"):
@@ -320,6 +318,7 @@ class LightningModel(pl.LightningModule):
 
     
     def visualize_cluster(self, memory_embeddings: torch.Tensor):
+        '''Visualize clusters in the memory bank using UMAP and HDBSCAN, and log to WandB.'''
         memory_embeddings = memory_embeddings.detach().cpu().numpy()
         n = memory_embeddings.shape[0]
         # subsample (UMAP + tSNE heavy)

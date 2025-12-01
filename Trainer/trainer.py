@@ -61,7 +61,9 @@ class Trainer:
         return "-".join(parts)
 
     def _find_latest_checkpoint(self, checkpoint_dir: str) -> Optional[str]:
+        '''Find the latest checkpoint file in the specified directory.'''
         def pick_checkpoint(files):
+            '''Pick the checkpoint file with the highest epoch number.'''
             numbered = []
             for f in files:
                 nums = re.findall(r'\d+', f)
