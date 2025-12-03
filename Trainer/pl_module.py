@@ -3,6 +3,7 @@ import wandb
 import hdbscan
 import numpy as np
 import pandas as pd
+import torch.nn as nn
 import seaborn as sns
 import lightning as pl
 from tqdm import tqdm
@@ -12,6 +13,7 @@ from sklearn.manifold import TSNE
 import umap.umap_ as umap
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 from torchvision.utils import make_grid
+from torch.utils.data import TensorDataset, DataLoader
 
 
 class LightningModel(pl.LightningModule):
@@ -24,6 +26,7 @@ class LightningModel(pl.LightningModule):
         self.nosim_train_epochs = config.hyperparameters.nosim_train_epochs
         self.return_attn = config.vit.return_attn
         self.mask_ratio = config.vit.mask_ratio
+        self.num_sim_patches = config.hyperparameters.num_neighbors
         # Extract optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
@@ -42,7 +45,11 @@ class LightningModel(pl.LightningModule):
         
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> Any:
         nosim_train = self.current_epoch < self.nosim_train_epochs # decide whether to disable similar patches during training
-        loss = self.model(batch[0]['images'], mask_ratio=self.mask_ratio, nosim_train=nosim_train, return_attn=self.return_attn).get('loss', None)
+        loss = self.model(batch[0]['images'],  
+                          mask_ratio=self.mask_ratio, 
+                          num_sim_patches=self.num_sim_patches,
+                          nosim_train=nosim_train, 
+                          return_attn=self.return_attn).get('loss', None)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         # --- Log LR every step ---
         lr = self.trainer.optimizers[0].param_groups[0]["lr"]
@@ -54,7 +61,12 @@ class LightningModel(pl.LightningModule):
         imgs = batch[0]["images"] 
         labels = batch[0]['labels']
         return_attn = self.return_attn and (batch_idx % 10 == 0)
-        outputs = self.model(imgs, mask_ratio=0, nosim_train=nosim_train, return_attn=return_attn, return_latents=True)
+        outputs = self.model(imgs, 
+                             mask_ratio=0, 
+                             num_sim_patches=self.num_sim_patches,
+                             nosim_train=nosim_train, 
+                             return_attn=return_attn, 
+                             return_latents=True)
         imgs = imgs.detach().cpu()
         labels = labels.detach().cpu()
         latents = outputs.get('latents', None).detach().cpu()
@@ -93,41 +105,8 @@ class LightningModel(pl.LightningModule):
             attn_scores = torch.cat(self.accu_attn_scores, dim=0)
             self.log_attention_distribution(attn_scores)
             self.accu_attn_scores = []  # reset for next epoch
-        # linear probing
-        self.feats = torch.cat(self.feats, dim=0)
-        self.labels = torch.cat(self.labels, dim=0)
-        N, D = self.feats.shape
-        num_classes = int(self.labels.max().item()) + 1
-        # ---- 1. Shuffle indices ----
-        perm = torch.randperm(N)
-        split = int(0.8 * N)
-        train_idx = perm[:split]
-        test_idx  = perm[split:]    
-        feats_train = self.feats[train_idx]
-        labels_train = self.labels[train_idx]   
-        feats_test = self.feats[test_idx]
-        labels_test = self.labels[test_idx]  
-        # ---- 2. Create linear classifier ----
-        clf = torch.nn.Linear(D, num_classes)
-        optimizer = torch.optim.Adam(clf.parameters(), lr=1e-3)
-        criterion = torch.nn.CrossEntropyLoss()
-        epochs = 100
-        # ---- 3. Train classifier on 80% split ----
-        with torch.enable_grad():
-            for _ in tqdm(range(epochs)):
-                logits = clf(feats_train)
-                loss = criterion(logits, labels_train)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-        # ---- 4. Evaluate on 20% split ----
-        with torch.no_grad():
-            preds = clf(feats_test).argmax(dim=1)
-            acc = (preds == labels_test).float().mean().item()
-        # ---- 5. Log the held-out linear eval accuracy ----
-        self.log("linear_probing_acc", acc, prog_bar=True)
-        self.feats = []
-        self.labels = []
+        # linear probing 
+        self.linear_probing(device=self.device, batch_size=2048)
 
     def configure_optimizers(self) -> Dict[str, Any]:
         # ---- compute steps ----
@@ -167,6 +146,17 @@ class LightningModel(pl.LightningModule):
                 "interval": "step",
             }
         }
+
+    # --------------------------------------------------------------------------------#
+    # Save and load memory
+    # --------------------------------------------------------------------------------#
+    # def on_save_checkpoint(self, checkpoint):
+    #     # Save memory tensor
+    #     checkpoint["memory_bank"] = self.model.memory_bank.memory.cpu()
+
+    # def on_load_checkpoint(self, checkpoint):
+    #     if "memory_bank" in checkpoint:
+    #         self.model.memory_bank.memory = checkpoint["memory_bank"].to(self.device)
 
     # --------------------------------------------------------------------------------#
     # helper functions
@@ -375,3 +365,92 @@ class LightningModel(pl.LightningModule):
             "num_clusters": n_clusters,
         })
         plt.close()
+
+    def linear_probing(self, device='cpu', batch_size=2048):
+        # ----- 1. Stack features & labels -----
+        self.feats = torch.cat(self.feats, dim=0)   # (N, D)
+        self.labels = torch.cat(self.labels, dim=0) # (N,)
+        N, D = self.feats.shape
+        num_classes = int(self.labels.max().item()) + 1
+        # ----- 2. Stratified 80/20 split -----
+        train_idx_list = []
+        test_idx_list = []
+        for c in range(num_classes):
+            class_idx = (self.labels == c).nonzero(as_tuple=True)[0]
+            perm = class_idx[torch.randperm(len(class_idx))]
+            split = int(0.8 * len(class_idx))
+            train_idx_list.append(perm[:split])
+            test_idx_list.append(perm[split:])
+        train_idx = torch.cat(train_idx_list)
+        test_idx = torch.cat(test_idx_list)
+        # gather data
+        feats_train = self.feats[train_idx]
+        labels_train = self.labels[train_idx]
+        feats_test  = self.feats[test_idx]
+        labels_test = self.labels[test_idx]
+        # move to device
+        if device != 'cpu':
+            feats_train = feats_train.to(device)
+            labels_train = labels_train.to(device)
+            feats_test = feats_test.to(device)
+            labels_test = labels_test.to(device)
+        # ----- 3. Linear classifier with BatchNorm -----
+        clf = nn.Sequential(
+            nn.BatchNorm1d(D, affine=False),
+            nn.Linear(D, num_classes)
+        ).to(device)
+        # MAE LR scaling rule
+        batch_size = min(batch_size, feats_train.size(0))
+        base_lr = 0.1
+        max_lr = base_lr * batch_size / 256.0
+        train_loader = DataLoader(
+            TensorDataset(feats_train, labels_train),
+            batch_size=batch_size,
+            shuffle=True,
+        )
+        optimizer = torch.optim.SGD(
+            clf.parameters(),
+            lr=max_lr,          # final LR, warmup scheduler will scale it
+            momentum=0.9,
+            weight_decay=0.0,
+        )
+        # ----- 4. Linear warmup + cosine schedulers -----
+        warmup_epochs = 10
+        total_epochs = 90
+        scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1e-6,       # start at near-zero LR
+            end_factor=1.0,          # warm up to max_lr
+            total_iters=warmup_epochs,
+        )
+        scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=total_epochs - warmup_epochs,
+            eta_min=1e-6,
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[scheduler_warmup, scheduler_cosine],
+            milestones=[warmup_epochs],
+        )
+        criterion = nn.CrossEntropyLoss()
+        # ----- 5. Training -----
+        clf.train()
+        with torch.enable_grad():
+            for epoch in range(total_epochs):
+                for x, y in train_loader:
+                    optimizer.zero_grad()
+                    logits = clf(x)
+                    loss = criterion(logits, y)
+                    loss.backward()
+                    optimizer.step()
+                scheduler.step()
+        # ----- 6. Evaluation -----
+        clf.eval()
+        with torch.no_grad():
+            preds = clf(feats_test).argmax(dim=1)
+            acc = (preds == labels_test).float().mean().item()
+        self.log("linear_probing_acc", acc, prog_bar=True)
+        # reset buffers
+        self.feats = []
+        self.labels = []

@@ -37,7 +37,7 @@ class memoMAE(MaskedAutoencoderViT):
             for i in range(config.vit.depth)])
         self.initialize_weights()
     
-    def forward_encoder_memo(self, x, mask_ratio=0.75, k_sim_patches=5, return_attn: bool=False):
+    def forward_encoder_memo(self, x, mask_ratio=0.75, k_sim_patches=5, memorize: bool=True, return_attn: bool=False):
         '''
         Forward function of encoder.
         Args:
@@ -53,7 +53,8 @@ class memoMAE(MaskedAutoencoderViT):
         x = self.patch_embed(x)
         x = x + self.pos_embed
         # push patches to memory bank
-        self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
+        if memorize:
+            self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
         # random masking
         x, mask, ids_restore = self.random_masking(x, mask_ratio) # (B, M, D)
         # retrieve nearest neighbors
@@ -96,7 +97,7 @@ class memoMAE(MaskedAutoencoderViT):
             num_sim_patches = 0
         attn = None
         if return_attn:
-            latents, mask, ids_restore, attn = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches, True)
+            latents, mask, ids_restore, attn = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches, return_attn=True)
         else:
             latents, mask, ids_restore = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches)
         pred = self.forward_decoder(latents, ids_restore)

@@ -29,14 +29,14 @@ memory_bank:
   memory_device: "cuda"
 
 hyperparameters:
-  nosim_train_epochs: 0
+  nosim_train_epochs: 20
   memory_mode: "random"
   num_neighbors: 10
 
 training:
-  batch_size: 64
-  max_epochs: 500
-  val_every_epochs: 10
+  batch_size: 128
+  max_epochs: 800
+  val_every_epochs: 20
   accumulate_grad_batches: 4
 
 optimizer:
@@ -51,7 +51,7 @@ optimizer:
   start_factor: 0.1
 
 checkpoint:
-  save_every_epochs: 50
+  save_every_epochs: 100
   save_dir: "checkpoints"
 
 logging:    
@@ -61,5 +61,5 @@ logging:
   logger: 'wandb'
 
 name: 'memomae'
-device: 1
+device: 3
 seed: 42
