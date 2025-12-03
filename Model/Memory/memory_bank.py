@@ -1,13 +1,19 @@
 import torch
+import numpy as np
 from .recollect_faiss import RecollectFaiss
 
 
 class MemoryBank:
     """A fixed-size memory bank for storing embeddings."""
-    def __init__(self, capacity: int, embed_dim: int,
-                 device="cuda:0", dtype=torch.float32) -> None:
+    def __init__(self, 
+                 capacity: int, 
+                 embed_dim: int,
+                 normalize: False,
+                 device="cuda:0", 
+                 dtype=torch.float32) -> None:
         self.capacity = capacity
         self.embed_dim = embed_dim
+        self.normalize = normalize
         self.device = torch.device(device)
         self.dtype = dtype
         self.memory, self.scores, self.stored_size = self.reset()
@@ -91,8 +97,12 @@ class MemoryBank:
         if self.stored_size == 0:
             raise ValueError("Memory bank is empty. Cannot perform recollection.")
         # Update FAISS index with current memory
-        self.recollector.update_index(self.memory[:self.stored_size])
-        distances, indices = self.recollector.recollect(query.to(self.device), k+1)  # [B*M, k]
+        if self.normalize:
+            self.recollector.update_index(self.memory[:self.stored_size]/self.memory[:self.stored_size].norm(dim=1, keepdim=True))
+            distances, indices = self.recollector.recollect((query/query.norm(dim=1, keepdim=True)).to(self.device), k+1)  # [B*M, k]
+        else:
+            self.recollector.update_index(self.memory[:self.stored_size])
+            distances, indices = self.recollector.recollect(query.to(self.device), k+1)  # [B*M, k]
         # Drop the first neighbor (assumed to be self)
         indices = indices[:, 1:]
         indices = indices.reshape(B, M * k)

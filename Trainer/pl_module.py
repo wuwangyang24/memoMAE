@@ -386,7 +386,7 @@ class LightningModel(pl.LightningModule):
         # gather data
         feats_train = self.feats[train_idx]
         labels_train = self.labels[train_idx]
-        feats_test  = self.feats[test_idx]
+        feats_test = self.feats[test_idx]
         labels_test = self.labels[test_idx]
         # move to device
         if device != 'cpu':

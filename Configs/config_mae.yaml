@@ -26,12 +26,13 @@ vit:
 memory_bank:
   memory_capacity: 100000
   embed_dim: 768
+  normalize: True
   memory_device: "cuda"
 
 hyperparameters:
   nosim_train_epochs: 20
   memory_mode: "random"
-  num_neighbors: 10
+  num_neighbors: 5
 
 training:
   batch_size: 128
@@ -61,5 +62,5 @@ logging:
   logger: 'wandb'
 
 name: 'memomae'
-device: 3
+device: 2
 seed: 42

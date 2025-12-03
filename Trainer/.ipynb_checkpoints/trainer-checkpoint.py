@@ -29,11 +29,12 @@ class Trainer:
         """Construct checkpoint directory path."""
         parts = [
             f'{self.config.model}',
-            f'ViT-{self.config.size}',
-            f'Patch-{self.config.data.patch_size}',
-            f'MemoCap{self.config.memory_bank.memory_capacity}', 
-            f'NumSim{self.config.hyperparameters.num_neighbors}', 
-            f'NosimEpochs{self.config.hyperparameters.nosim_train_epochs}'
+            f'ViT{self.config.size}',
+            f'P{self.config.data.patch_size}',
+            f'MB{self.config.memory_bank.memory_capacity}', 
+            f'K{self.config.hyperparameters.num_neighbors}', 
+            f'NSEpochs{self.config.hyperparameters.nosim_train_epochs}',
+            f'MBNorm{self.config.memory_bank.normalize}'
         ]
         p_name = "-".join(parts)
         return os.path.join(self.config.checkpoint.save_dir, p_name)
@@ -52,16 +53,19 @@ class Trainer:
         """Generate a structured experiment name from configuration."""
         parts = [
             f'{cfg.model}',
-            f'ViT-{cfg.size}',
-            f'Patch-{cfg.data.patch_size}',
-            f'MemoCap{cfg.memory_bank.memory_capacity}', 
-            f'NumSim{cfg.hyperparameters.num_neighbors}', 
-            f'NosimEpochs{cfg.hyperparameters.nosim_train_epochs}'
+            f'ViT{cfg.size}',
+            f'P{cfg.data.patch_size}',
+            f'MB{cfg.memory_bank.memory_capacity}', 
+            f'K{cfg.hyperparameters.num_neighbors}', 
+            f'NSEpochs{cfg.hyperparameters.nosim_train_epochs}',
+            f'MBNorm{cfg.memory_bank.normalize}'
         ]
         return "-".join(parts)
 
     def _find_latest_checkpoint(self, checkpoint_dir: str) -> Optional[str]:
+        '''Find the latest checkpoint file in the specified directory.'''
         def pick_checkpoint(files):
+            '''Pick the checkpoint file with the highest epoch number.'''
             numbered = []
             for f in files:
                 nums = re.findall(r'\d+', f)
