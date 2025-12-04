@@ -63,6 +63,7 @@ logging:
 
 linearprobing:
   device: 'cpu'
+  batch_size: 2048
 
 name: 'memomae'
 device: 0

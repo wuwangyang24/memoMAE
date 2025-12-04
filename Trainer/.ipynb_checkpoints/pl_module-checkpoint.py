@@ -14,14 +14,17 @@ class LightningModel(pl.LightningModule):
         self.save_hyperparameters(ignore=['model'])
         self.model = model
         
-        # hyperparameters
+        # training hyperparameters
         self.patch_size = config.data.patch_size
         self.nosim_train_epochs = config.hyperparameters.nosim_train_epochs
         self.return_attn = config.vit.return_attn
         self.mask_ratio = config.vit.mask_ratio
         self.num_sim_patches = config.hyperparameters.num_neighbors
-        self.lp_device = config.linearprobing.device
         self.baseline = config.hyperparameters.nosim_train_epochs == config.training.max_epochs #if training a baseline
+
+        # linear probing hp
+        self.lp_device = config.linearprobing.device
+        self.lp_batch_size = config.linearprobing.batch_size
         
         # Extract optimizer configuration
         optimizer_config = config.optimizer
@@ -133,7 +136,7 @@ class LightningModel(pl.LightningModule):
                              train_labels=self.labels_train,
                              val_feats=self.feats_val,
                              val_labels=self.labels_val,
-                             batch_size=2048,
+                             batch_size=self.lp_batch_size,
                              device=self.lp_device)
         self.log("linear_probing_acc", acc, prog_bar=True)
         # reset buffers
