@@ -33,8 +33,8 @@ class Trainer:
             f'P{self.config.data.patch_size}',
             f'MB{self.config.memory_bank.memory_capacity}', 
             f'K{self.config.hyperparameters.num_neighbors}', 
-            f'NSEpochs{self.config.hyperparameters.nosim_train_epochs}',
-            f'MBNorm{self.config.memory_bank.normalize}'
+            f'NSEp{self.config.hyperparameters.nosim_train_epochs}',
+            f'Cosine{self.config.memory_bank.normalize}'
         ]
         p_name = "-".join(parts)
         return os.path.join(self.config.checkpoint.save_dir, p_name)
@@ -57,8 +57,8 @@ class Trainer:
             f'P{cfg.data.patch_size}',
             f'MB{cfg.memory_bank.memory_capacity}', 
             f'K{cfg.hyperparameters.num_neighbors}', 
-            f'NSEpochs{cfg.hyperparameters.nosim_train_epochs}',
-            f'MBNorm{cfg.memory_bank.normalize}'
+            f'NSEp{cfg.hyperparameters.nosim_train_epochs}',
+            f'Cosine{cfg.memory_bank.normalize}'
         ]
         return "-".join(parts)
 
