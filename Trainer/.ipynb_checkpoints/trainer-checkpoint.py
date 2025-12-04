@@ -108,6 +108,10 @@ class Trainer:
         else:
             devices = [int(device)]         # use the specified GPU
             strategy = None                 # Lightning will choose single-device strategy
+        if self.config.test_run:
+            limit_train_batches=0.01
+        else:
+            limit_train_batches = 1.0
 
         return pl.Trainer(
             accelerator="gpu",
@@ -121,6 +125,7 @@ class Trainer:
             log_every_n_steps=1,
             precision="16-mixed",
             num_sanity_val_steps=1,
+            limit_train_batches=limit_train_batches,
             callbacks=[
                 checkpoint_callback,
                 pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),

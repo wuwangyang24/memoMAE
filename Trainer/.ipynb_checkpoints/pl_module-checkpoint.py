@@ -22,6 +22,7 @@ class LightningModel(pl.LightningModule):
         self.num_sim_patches = config.hyperparameters.num_neighbors
         self.baseline = config.hyperparameters.nosim_train_epochs == config.training.max_epochs #if training a baseline
         self.eval_every = config.training.val_every_epochs
+        self.test_run = config.test_run
         
         # ---- optimizer configuration ----
         optimizer_config = config.optimizer
@@ -82,75 +83,97 @@ class LightningModel(pl.LightningModule):
                              memorize=False, #during validation, memory bank is frozen
                              return_attn=return_attn, 
                              return_latents=True)
+
+        # detach on all ranks (cheap) but only *use* on main GPU
         imgs = imgs.detach().cpu()
         labels = labels.detach().cpu()
         latents = outputs.get('latents', None).detach().cpu()
         pred = outputs.get('pred', None).detach().cpu()
         mask = outputs.get('mask', None).detach().cpu()
         attn_scores = outputs.get('attn', None)
-        # store attention scores for logging
-        if attn_scores is not None:
-            self.accu_attn_scores.append(attn_scores.detach().cpu())
-        # only visualise for first batch each epoch
-        if batch_idx == 0:
-            with torch.no_grad():
-                # log reconstruction images
-                rec = reconstruct_from_pred(pred, mask, self.patch_size)
-                # unpatchify to full image
-                rec = self.model.unpatchify(rec) 
-                masked = build_masked_image(imgs, mask, self.patch_size)
-                grid = make_reconstruction_images(imgs, masked, rec)
-                self.logger.experiment.log({f"reconstructions": wandb.Image(grid), "epoch": self.current_epoch})
-        # store latents for linear probing
-        self.feats_val.append(latents.mean(1))
-        self.labels_val.append(labels.squeeze(1).to(torch.long))
+
+        # Only main GPU stores attention + features and logs reconstructions
+        if self.trainer.is_global_zero:
+            # store attention scores for logging
+            if attn_scores is not None:
+                self.accu_attn_scores.append(attn_scores.detach().cpu())
+
+            # only visualise for first batch each epoch (on main GPU only)
+            if batch_idx == 0:
+                with torch.no_grad():
+                    # log reconstruction images
+                    rec = reconstruct_from_pred(pred, mask, self.patch_size)
+                    # unpatchify to full image
+                    rec = self.model.unpatchify(rec) 
+                    masked = build_masked_image(imgs, mask, self.patch_size)
+                    grid = make_reconstruction_images(imgs, masked, rec)
+                    self.logger.experiment.log(
+                        {f"reconstructions": wandb.Image(grid), "epoch": self.current_epoch}
+                    )
+            # store latents for linear probing (main GPU only)
+            self.feats_val.append(latents.mean(1))
+            self.labels_val.append(labels.squeeze(1).to(torch.long))
 
     def on_train_epoch_end(self):
-        # Only compute before validation epoch
-        if (self.current_epoch + 1) % self.eval_every != 0:
+        # Only main GPU + only before validation epoch
+        if not self.trainer.is_global_zero:
             return
-        self.print(f"Preparing latents for training linear prober at epoch {self.current_epoch}...")
+        if (self.current_epoch + 1) % self.eval_every != 0:
+            return   
+
+        nosim_train = self.current_epoch < self.nosim_train_epochs
+        num_sim_patches = 0 if nosim_train else self.num_sim_patches
+        self.print(f"[rank0] Preparing latents for training linear prober at epoch {self.current_epoch}...")
         train_loader = self.trainer.datamodule.train_dataloader()
+
+        # -------- limit dataset to 1% for test_run --------
+        if self.test_run:
+            total_batches = len(train_loader)
+            max_batches = max(1, int(total_batches * 0.01))   # 1% of batches
+        else:
+            max_batches = None
+        # -------------------------------------------------------
         with torch.no_grad():
-            for batch in tqdm(train_loader):
+            for i, batch in enumerate(tqdm(train_loader)):
+                # stop early if test_run mode
+                if max_batches is not None and i >= max_batches:
+                    break  
                 x = batch[0]["images"] 
-                y = batch[0]['labels']
-                feats = self.model.forward_encoder_memo(x, 
-                                                        mask_ratio=0, #all patches are visible
-                                                        k_sim_patches=self.num_sim_patches,
-                                                        memorize=False #memory bank is frozen
-                                                       )[0]
+                y = batch[0]["labels"]
+                feats = self.model.forward_encoder_memo(
+                    x,
+                    mask_ratio=0,                   # all patches visible
+                    k_sim_patches=num_sim_patches,
+                    memorize=False                  # memory bank is frozen
+                )[0]
                 self.feats_train.append(feats.mean(1).cpu())
-                self.labels_train.append(y.squeeze(1).to(torch.long).cpu())
+                self.labels_train.append(y.squeeze(1).long().cpu())
+
        
     def on_validation_epoch_end(self):
-        # if hasattr(self.model, "memory_bank"):
-        #     mb = self.model.memory_bank
-        # elif hasattr(self.model.encoder, "memory_bank"):
-        #     mb = self.model.encoder.memory_bank
-        # else:
-        #     mb = None
-        # # if no memory bank found
-        # if mb is None:
-        #     return
-        # proceed only if it has something stored
-        # if hasattr(mb, "stored_size") and mb.stored_size > 0:
-        #     self.visualize_cluster(mb.memory)
-        # # log attention distribution
-        # if len(self.accu_attn_scores) > 0:
-        #     attn_scores = torch.cat(self.accu_attn_scores, dim=0)
-        #     self.log_attention_distribution(attn_scores)
-        #     self.accu_attn_scores = []  # reset for next epoch
+        # Only main GPU does linear probing + logging
+        if not self.trainer.is_global_zero:
+            # make sure local buffers are cleared in case anything snuck in
+            self.feats_val = []
+            self.labels_val = []
+            self.feats_train = []
+            self.labels_train = []
+            return
+
         # ----- linear probing ------ 
         if len(self.feats_train) == 0:
             return
-        acc = linear_probing(train_feats=self.feats_train, 
-                             train_labels=self.labels_train,
-                             val_feats=self.feats_val,
-                             val_labels=self.labels_val,
-                             batch_size=self.lp_batch_size,
-                             device=self.lp_device)
+
+        acc = linear_probing(
+            train_feats=self.feats_train, 
+            train_labels=self.labels_train,
+            val_feats=self.feats_val,
+            val_labels=self.labels_val,
+            batch_size=self.lp_batch_size,
+            device=self.lp_device
+        )
         self.log("linear_probing_acc", acc, prog_bar=True)
+
         # reset buffers
         self.feats_val = []
         self.labels_val = []
@@ -206,5 +229,3 @@ class LightningModel(pl.LightningModule):
     # def on_load_checkpoint(self, checkpoint):
     #     if "memory_bank" in checkpoint:
     #         self.model.memory_bank.memory = checkpoint["memory_bank"].to(self.device)
-
-
