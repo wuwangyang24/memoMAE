@@ -128,7 +128,7 @@ class Trainer:
             limit_train_batches=limit_train_batches,
             callbacks=[
                 checkpoint_callback,
-                pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),
+                #pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),
                 pl.pytorch.callbacks.ModelSummary(max_depth=4),
                 #pl.pytorch.callbacks.DeviceStatsMonitor(),
             ],

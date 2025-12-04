@@ -6,7 +6,7 @@ import lightning as pl
 class DALIDataModule(pl.LightningDataModule):
     def __init__(self, 
                  train_list, val_list, test_list=None,
-                 batch_size=256, num_threads=6):
+                 batch_size=256, num_threads=12):
         super().__init__()
         self.train_list = train_list
         self.val_list = val_list
