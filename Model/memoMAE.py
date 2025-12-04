@@ -27,7 +27,7 @@ class memoMAE(MaskedAutoencoderViT):
             capacity=config.memory_bank.memory_capacity,
             embed_dim=config.vit.embed_dim,
             normalize=config.memory_bank.normalize,
-            device=f"cuda:{config.device}"
+            device=f"{config.memory_bank.device}"
         )
         self.blocks = nn.ModuleList([
             AsymBlock(config.vit.embed_dim, 

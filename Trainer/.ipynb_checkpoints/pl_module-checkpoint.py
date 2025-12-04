@@ -36,9 +36,9 @@ class LightningModel(pl.LightningModule):
         
         # ---- use learning rate rule ----
         base_lr = optimizer_config.learning_rate
-        world_size = getattr(self.trainer, "world_size", 1)
+        world_size = config.world_size
         per_gpu_batch = config.training.batch_size
-        accum = getattr(self.trainer, "accumulate_grad_batches", 1)
+        accum = config.training.accumulate_grad_batches
         global_batch_size = per_gpu_batch * world_size * accum
         self.lr = base_lr * (global_batch_size / 256.0)
         
@@ -95,12 +95,12 @@ class LightningModel(pl.LightningModule):
         if batch_idx == 0:
             with torch.no_grad():
                 # log reconstruction images
-                rec = reconstruct_from_pred(pred, mask)
+                rec = reconstruct_from_pred(pred, mask, self.patch_size)
                 # unpatchify to full image
                 rec = self.model.unpatchify(rec) 
-                masked = build_masked_image(imgs, mask)
+                masked = build_masked_image(imgs, mask, self.patch_size)
                 grid = make_reconstruction_images(imgs, masked, rec)
-                self.logger.experiment.log({f"{stage}/reconstructions": wandb.Image(grid), "epoch": self.current_epoch})
+                self.logger.experiment.log({f"reconstructions": wandb.Image(grid), "epoch": self.current_epoch})
         # store latents for linear probing
         self.feats_val.append(latents.mean(1))
         self.labels_val.append(labels.squeeze(1).to(torch.long))
@@ -142,6 +142,8 @@ class LightningModel(pl.LightningModule):
         #     self.log_attention_distribution(attn_scores)
         #     self.accu_attn_scores = []  # reset for next epoch
         # ----- linear probing ------ 
+        if len(self.feats_train) == 0:
+            return
         acc = linear_probing(train_feats=self.feats_train, 
                              train_labels=self.labels_train,
                              val_feats=self.feats_val,

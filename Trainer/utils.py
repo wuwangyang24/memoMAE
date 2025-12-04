@@ -15,7 +15,7 @@ from torch.utils.data import TensorDataset, DataLoader
 # --------------------------------------------------------------------------------#
 # helper functions
 # --------------------------------------------------------------------------------#
-def reconstruct_from_pred(pred: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+def reconstruct_from_pred(pred: torch.Tensor, mask: torch.Tensor, patch_size: int) -> torch.Tensor:
     """
     pred: (B, L, p*p*3)
     mask: (B, L)  with 1 = masked, 0 = visible (MAE-style)
@@ -24,7 +24,7 @@ def reconstruct_from_pred(pred: torch.Tensor, mask: torch.Tensor) -> torch.Tenso
     if len(pred.shape) == 4:
         return pred
     B, L, _ = pred.shape
-    p = self.patch_size
+    p = patch_size
     C = 3
     # (B, L, 3, p, p)
     pred = pred.view(B, L, C, p, p)
@@ -34,7 +34,7 @@ def reconstruct_from_pred(pred: torch.Tensor, mask: torch.Tensor) -> torch.Tenso
         pred = pred * mask_                        # (B, 3, H, W)
     return pred
 
-def build_masked_image(imgs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+def build_masked_image(imgs: torch.Tensor, mask: torch.Tensor, patch_size: int) -> torch.Tensor:
     """
     imgs: (B, 3, H, W)
     mask: (B, L)
@@ -43,7 +43,7 @@ def build_masked_image(imgs: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     if len(mask.shape) == 4:
         return imgs * (1-mask)
     B, C, H, W = imgs.shape
-    p = self.patch_size
+    p = patch_size
     h = H // p
     w = W // p
     # mask: (B, L) → (B, h, w, 1, 1)
