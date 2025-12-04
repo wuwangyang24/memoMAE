@@ -101,10 +101,18 @@ class Trainer:
             save_last=True,
         )
         profiler = AdvancedProfiler(filename="advanced_profiler")
+        device = self.config.device
+        if device is None or device == "" or str(device).lower() == "none":
+            devices = -1                    # use all GPUs
+            strategy = "ddp"                # safe for multi-GPU
+        else:
+            devices = [int(device)]         # use the specified GPU
+            strategy = None                 # Lightning will choose single-device strategy
 
         return pl.Trainer(
             accelerator="gpu",
-            devices=-1 if self.config.device is None else [self.config.device],
+            devices=devices,
+            strategy=strategy,
             max_epochs=self.config.training.max_epochs,
             gradient_clip_val=1.0,
             accumulate_grad_batches=self.config.training.accumulate_grad_batches,
