@@ -1,16 +1,9 @@
 import torch
 import wandb
-import hdbscan
-import numpy as np
-import pandas as pd
-import torch.nn as nn
-import seaborn as sns
 import lightning as pl
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-from typing import Any, Optional, Dict
+from typing import Any, Dict
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
-from torch.utils.data import TensorDataset, DataLoader
 from .utils import reconstruct_from_pred, build_masked_image, make_reconstruction_images, linear_probing
 
 
