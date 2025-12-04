@@ -21,15 +21,11 @@ class LightningModel(pl.LightningModule):
         self.mask_ratio = config.vit.mask_ratio
         self.num_sim_patches = config.hyperparameters.num_neighbors
         self.baseline = config.hyperparameters.nosim_train_epochs == config.training.max_epochs #if training a baseline
-
-        # linear probing hp
-        self.lp_device = config.linearprobing.device
-        self.lp_batch_size = config.linearprobing.batch_size
+        self.eval_every = config.training.val_every_epochs
         
-        # Extract optimizer configuration
+        # optimizer configuration
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
-        self.eval_every = config.training.val_every_epochs
         self.lr = optimizer_config.learning_rate
         self.beta1 = optimizer_config.beta1
         self.beta2 = optimizer_config.beta2
@@ -38,8 +34,15 @@ class LightningModel(pl.LightningModule):
         self.warmup_epochs = optimizer_config.warmup_epochs
         self.start_factor = optimizer_config.start_factor
         self.max_epochs = config.training.max_epochs
+        
+        # linear probing hp
+        self.lp_device = config.linearprobing.device
+        self.lp_batch_size = config.linearprobing.batch_size
+        
         # attention storage for logging
         self.accu_attn_scores = []
+
+        # storage for linear probing
         self.feats_val = []
         self.labels_val = []
         self.feats_train = []
