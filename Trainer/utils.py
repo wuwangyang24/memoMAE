@@ -4,13 +4,11 @@ import numpy as np
 import pandas as pd
 import torch.nn as nn
 import seaborn as sns
-import lightning as pl
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from typing import Any, Optional, Dict
 from sklearn.manifold import TSNE
 import umap.umap_ as umap
-from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR
 from torchvision.utils import make_grid
 from torch.utils.data import TensorDataset, DataLoader
 
