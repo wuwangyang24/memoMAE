@@ -42,14 +42,14 @@ training:
 
 optimizer:
   optim: "adamw"
-  learning_rate: 1e-4
+  learning_rate: 1.5e-4
   beta1: 0.9
-  beta2: 0.999
+  beta2: 0.95
   eta_min: 1e-7
   weight_decay: 0.05
   lr_scheduler: "cosine"
   warmup_epochs: 40
-  start_factor: 0.1
+  start_factor: 0.
 
 checkpoint:
   save_every_epochs: 100
