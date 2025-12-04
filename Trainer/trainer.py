@@ -97,7 +97,7 @@ class Trainer:
             dirpath=self._checkpoint_dir,
             filename='checkpoint_{epoch}',
             every_n_epochs=self.config.checkpoint.save_every_epochs,
-            save_top_k=1,
+            save_top_k=-1,
             save_last=True,
         )
         profiler = AdvancedProfiler(filename="advanced_profiler")
@@ -112,7 +112,7 @@ class Trainer:
             logger=self.wandb_logger,
             log_every_n_steps=1,
             precision="16-mixed",
-            num_sanity_val_steps=0,
+            num_sanity_val_steps=1,
             callbacks=[
                 checkpoint_callback,
                 pl.pytorch.callbacks.LearningRateMonitor(logging_interval='step'),

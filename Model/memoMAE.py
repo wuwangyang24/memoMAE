@@ -38,7 +38,13 @@ class memoMAE(MaskedAutoencoderViT):
             for i in range(config.vit.depth)])
         self.initialize_weights()
     
-    def forward_encoder_memo(self, x, mask_ratio=0.75, k_sim_patches=5, memorize: bool=True, return_attn: bool=False):
+    def forward_encoder_memo(self, 
+                             x, 
+                             mask_ratio=0.75, 
+                             k_sim_patches=5, 
+                             memorize: bool=True, 
+                             fill_memory: bool=False,
+                             return_attn: bool=False):
         '''
         Forward function of encoder.
         Args:
@@ -56,6 +62,8 @@ class memoMAE(MaskedAutoencoderViT):
         # push patches to memory bank
         if memorize:
             self.memory_bank.memorize(x.reshape(-1, x.shape[-1]))
+            if fill_memory:
+                return
         # random masking
         x, mask, ids_restore = self.random_masking(x, mask_ratio) # (B, M, D)
         # retrieve nearest neighbors
@@ -79,6 +87,7 @@ class memoMAE(MaskedAutoencoderViT):
                 mask_ratio=0.75, 
                 nosim_train: bool=False, 
                 num_sim_patches: int=5, 
+                memorize: bool=True,
                 return_attn: bool=False,
                 return_latents: bool=False
                ):
@@ -98,9 +107,16 @@ class memoMAE(MaskedAutoencoderViT):
             num_sim_patches = 0
         attn = None
         if return_attn:
-            latents, mask, ids_restore, attn = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches, return_attn=True)
+            latents, mask, ids_restore, attn = self.forward_encoder_memo(imgs, 
+                                                                         mask_ratio=mask_ratio, 
+                                                                         k_sim_patches=num_sim_patches, 
+                                                                         memorize=True, 
+                                                                         return_attn=True)
         else:
-            latents, mask, ids_restore = self.forward_encoder_memo(imgs, mask_ratio, num_sim_patches)
+            latents, mask, ids_restore = self.forward_encoder_memo(imgs, 
+                                                                   mask_ratio=mask_ratio, 
+                                                                   k_sim_patches=num_sim_patches, 
+                                                                   memorize=True)
         pred = self.forward_decoder(latents, ids_restore)
         loss = self.forward_loss(imgs, pred, mask)
         if return_latents:

@@ -20,7 +20,7 @@ vit:
   mlp_ratio: 4.
   qkv_bias: True
   norm_pix_loss: False
-  return_attn: True
+  return_attn: False
   mask_ratio: 0.75
 
 memory_bank:
@@ -30,14 +30,14 @@ memory_bank:
   memory_device: "cuda"
 
 hyperparameters:
-  nosim_train_epochs: 20
+  nosim_train_epochs: 800
   memory_mode: "random"
-  num_neighbors: 5
+  num_neighbors: 10
 
 training:
   batch_size: 128
   max_epochs: 800
-  val_every_epochs: 20
+  val_every_epochs: 1
   accumulate_grad_batches: 4
 
 optimizer:
@@ -61,6 +61,9 @@ logging:
   log_every_epochs: 1
   logger: 'wandb'
 
+linearprobing:
+  device: 'cpu'
+
 name: 'memomae'
-device: 2
+device: 0
 seed: 42
