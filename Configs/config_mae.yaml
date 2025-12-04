@@ -30,13 +30,13 @@ memory_bank:
   memory_device: "cuda"
 
 hyperparameters:
-  nosim_train_epochs: 800
+  nosim_train_epochs: 1600
   memory_mode: "random"
   num_neighbors: 10
 
 training:
   batch_size: 128
-  max_epochs: 800
+  max_epochs: 1600
   val_every_epochs: 1
   accumulate_grad_batches: 4
 
@@ -48,7 +48,7 @@ optimizer:
   eta_min: 1e-7
   weight_decay: 0.05
   lr_scheduler: "cosine"
-  warmup_epochs: 20
+  warmup_epochs: 40
   start_factor: 0.1
 
 checkpoint:
@@ -66,5 +66,5 @@ linearprobing:
   batch_size: 2048
 
 name: 'memomae'
-device: 0
+device:
 seed: 42

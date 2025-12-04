@@ -14,7 +14,7 @@ class LightningModel(pl.LightningModule):
         self.save_hyperparameters(ignore=['model'])
         self.model = model
         
-        # training hyperparameters
+        # ---- training hyperparameters ----
         self.patch_size = config.data.patch_size
         self.nosim_train_epochs = config.hyperparameters.nosim_train_epochs
         self.return_attn = config.vit.return_attn
@@ -23,10 +23,9 @@ class LightningModel(pl.LightningModule):
         self.baseline = config.hyperparameters.nosim_train_epochs == config.training.max_epochs #if training a baseline
         self.eval_every = config.training.val_every_epochs
         
-        # optimizer configuration
+        # ---- optimizer configuration ----
         optimizer_config = config.optimizer
         self.max_epochs = config.training.max_epochs
-        self.lr = optimizer_config.learning_rate
         self.beta1 = optimizer_config.beta1
         self.beta2 = optimizer_config.beta2
         self.weight_decay = optimizer_config.weight_decay
@@ -35,14 +34,22 @@ class LightningModel(pl.LightningModule):
         self.start_factor = optimizer_config.start_factor
         self.max_epochs = config.training.max_epochs
         
-        # linear probing hp
+        # ---- use learning rate rule ----
+        base_lr = optimizer_config.learning_rate
+        world_size = getattr(self.trainer, "world_size", 1)
+        per_gpu_batch = config.training.batch_size
+        accum = getattr(self.trainer, "accumulate_grad_batches", 1)
+        global_batch_size = per_gpu_batch * world_size * accum
+        self.lr = base_lr * (global_batch_size / 256.0)
+        
+        # ---- linear probing hp ----
         self.lp_device = config.linearprobing.device
         self.lp_batch_size = config.linearprobing.batch_size
         
-        # attention storage for logging
+        # ---- attention storage for logging ----
         self.accu_attn_scores = []
 
-        # storage for linear probing
+        # ---- storage for linear probing ----
         self.feats_val = []
         self.labels_val = []
         self.feats_train = []
