@@ -104,7 +104,7 @@ class Trainer:
 
         return pl.Trainer(
             accelerator="gpu",
-            devices=[self.config.device],
+            devices=-1 if self.config.device is None else [self.config.device],
             max_epochs=self.config.training.max_epochs,
             gradient_clip_val=1.0,
             accumulate_grad_batches=self.config.training.accumulate_grad_batches,
