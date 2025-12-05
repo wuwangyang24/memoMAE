@@ -4,7 +4,7 @@ size: 'B'
 data:
   img_size: 224
   patch_size: 16
-  train: 'Data/train.txt'
+  train: 'Data/train_expanded.txt'
   val: 'Data/val.txt'
 
 vit:
@@ -69,4 +69,4 @@ name: 'memomae'
 device:
 world_size: 4
 seed: 42
-test_run: True
+test_run: False

@@ -14,7 +14,7 @@ class MemoryBank:
         self.capacity = capacity
         self.embed_dim = embed_dim
         self.normalize = normalize
-        self.device = torch.device(device)
+        self.device = device
         self.dtype = dtype
         self.memory, self.scores, self.stored_size = self.reset()
         self.recollector = RecollectFaiss(embed_dim, device=device)

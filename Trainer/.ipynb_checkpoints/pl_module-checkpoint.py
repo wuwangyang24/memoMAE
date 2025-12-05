@@ -42,6 +42,7 @@ class LightningModel(pl.LightningModule):
         accum = config.training.accumulate_grad_batches
         global_batch_size = per_gpu_batch * world_size * accum
         self.lr = base_lr * (global_batch_size / 256.0)
+        print(f'Actual learning rate: {self.lr}')
         
         # ---- linear probing hp ----
         self.lp_device = config.linearprobing.device
@@ -113,32 +114,19 @@ class LightningModel(pl.LightningModule):
             # store latents for linear probing (main GPU only)
             self.feats_val.append(latents.mean(1))
             self.labels_val.append(labels.squeeze(1).to(torch.long))
-
-    def on_train_epoch_end(self):
-        # Only main GPU + only before validation epoch
+       
+    def on_validation_epoch_end(self):
+        # Only main GPU
         if not self.trainer.is_global_zero:
             return
-        if (self.current_epoch + 1) % self.eval_every != 0:
-            return   
-
         nosim_train = self.current_epoch < self.nosim_train_epochs
         num_sim_patches = 0 if nosim_train else self.num_sim_patches
         self.print(f"[rank0] Preparing latents for training linear prober at epoch {self.current_epoch}...")
         train_loader = self.trainer.datamodule.train_dataloader()
-
-        # -------- limit dataset to 1% for test_run --------
-        if self.test_run:
-            total_batches = len(train_loader)
-            max_batches = max(1, int(total_batches * 0.01))   # 1% of batches
-        else:
-            max_batches = None
-        # -------------------------------------------------------
+        self.model.eval()
         with torch.no_grad():
-            for i, batch in enumerate(tqdm(train_loader)):
-                # stop early if test_run mode
-                if max_batches is not None and i >= max_batches:
-                    break  
-                x = batch[0]["images"] 
+            for batch in tqdm(train_loader):
+                x = batch[0]["images"].to(self.device, non_blocking=True)
                 y = batch[0]["labels"]
                 feats = self.model.forward_encoder_memo(
                     x,
@@ -148,22 +136,7 @@ class LightningModel(pl.LightningModule):
                 )[0]
                 self.feats_train.append(feats.mean(1).cpu())
                 self.labels_train.append(y.squeeze(1).long().cpu())
-
-       
-    def on_validation_epoch_end(self):
-        # Only main GPU does linear probing + logging
-        if not self.trainer.is_global_zero:
-            # make sure local buffers are cleared in case anything snuck in
-            self.feats_val = []
-            self.labels_val = []
-            self.feats_train = []
-            self.labels_train = []
-            return
-
-        # ----- linear probing ------ 
-        if len(self.feats_train) == 0:
-            return
-
+            
         acc = linear_probing(
             train_feats=self.feats_train, 
             train_labels=self.labels_train,

@@ -22,12 +22,9 @@ class RecollectFaiss:
             self.res = None
             self.index = faiss.IndexFlatIP(embed_dim)
         else:
-            # parse device like "cuda:0"
-            if device.startswith("cuda"):
-                self.device_type = "gpu"
-                self.device_id = int(device.split(":")[1]) if ":" in device else 0
-            else:
-                raise ValueError(f"Unsupported device: {device}")
+            self.device_type = "gpu"
+            self.device_id = int(device)
+
             self.res = faiss.StandardGpuResources()
             # Config for GPU index
             cfg = faiss.GpuIndexFlatConfig()
