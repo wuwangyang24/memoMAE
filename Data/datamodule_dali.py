@@ -18,7 +18,7 @@ class DALIDataModule(pl.LightningDataModule):
         test_list=None,
         batch_size=256,
         num_threads=8,
-        prefetch_queue_depth=4,
+        prefetch_queue_depth=2,
     ):
         super().__init__()
         self.train_list = train_list
@@ -106,7 +106,6 @@ class DALIDataModule(pl.LightningDataModule):
             self._test_loader = DALIGenericIterator(
                 pipelines=[test_pipe],
                 output_map=["images", "labels"],
-                size=test_size // world_size,
                 auto_reset=True,
                 reader_name="Reader",
             )

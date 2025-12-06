@@ -99,6 +99,7 @@ class Trainer:
             every_n_epochs=self.config.checkpoint.save_every_epochs,
             save_top_k=-1,
             save_last=True,
+            verbose=True
         )
         profiler = AdvancedProfiler(filename="advanced_profiler")
         device = self.config.device
@@ -115,7 +116,7 @@ class Trainer:
 
         return pl.Trainer(
             accelerator="gpu",
-            devices=devices,
+            devices=devices, 
             strategy=strategy,
             use_distributed_sampler=False,
             reload_dataloaders_every_n_epochs=0,
@@ -125,7 +126,7 @@ class Trainer:
             accumulate_grad_batches=self.config.training.accumulate_grad_batches,
             check_val_every_n_epoch=self.config.training.val_every_epochs,
             logger=self.wandb_logger,
-            log_every_n_steps=50,
+            log_every_n_steps=10,
             precision="16-mixed",
             num_sanity_val_steps=0,
             limit_train_batches=limit_train_batches,

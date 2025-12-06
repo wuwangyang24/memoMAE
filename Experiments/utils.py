@@ -9,9 +9,8 @@ def build_memomae_from_config(config, ModelClass):
     
 
 def load_backbone_from_ckpt(
-    ckpt_path: str,
+    config,
     ModelClass,
-    config_path,
     model_key_prefix: str = "model.",
     map_location: str = "cpu",
 ):
@@ -19,8 +18,7 @@ def load_backbone_from_ckpt(
     Load memoMAE weights from a Lightning checkpoint that contained a LightningModule
     with an attribute `self.model` holding memoMAE(config).
     """
-    config = OmegaConf.load(config_path)
-    ckpt = torch.load(ckpt_path, map_location=map_location, weights_only=False)
+    ckpt = torch.load(config.ckpt_path, map_location=map_location, weights_only=False)
     state_dict: Dict[str, torch.Tensor] = ckpt["state_dict"]
 
     # Strip 'model.' prefix (or whatever you used) so it matches memoMAE's state_dict

@@ -27,7 +27,7 @@ class memoMAE(MaskedAutoencoderViT):
             capacity=config.memory_bank.memory_capacity,
             embed_dim=config.vit.embed_dim,
             normalize=config.memory_bank.normalize,
-            device=config.memory_bank.device
+            device=int(os.environ.get("LOCAL_RANK", 0))
         )
         self.blocks = nn.ModuleList([
             AsymBlock(config.vit.embed_dim, 
@@ -110,13 +110,13 @@ class memoMAE(MaskedAutoencoderViT):
             latents, mask, ids_restore, attn = self.forward_encoder_memo(imgs, 
                                                                          mask_ratio=mask_ratio, 
                                                                          k_sim_patches=num_sim_patches, 
-                                                                         memorize=True, 
+                                                                         memorize=memorize, 
                                                                          return_attn=True)
         else:
             latents, mask, ids_restore = self.forward_encoder_memo(imgs, 
                                                                    mask_ratio=mask_ratio, 
                                                                    k_sim_patches=num_sim_patches, 
-                                                                   memorize=True)
+                                                                   memorize=memorize)
         pred = self.forward_decoder(latents, ids_restore)
         loss = self.forward_loss(imgs, pred, mask)
         if return_latents:

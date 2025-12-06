@@ -13,7 +13,7 @@ class TrainPipeline(Pipeline):
         shard_id,
         num_shards,
         base_seed=42,
-        prefetch_queue_depth=4,
+        prefetch_queue_depth=2,
     ):
         seed = int(base_seed) + int(shard_id)
         super().__init__(
@@ -41,20 +41,23 @@ class TrainPipeline(Pipeline):
         images, labels = self.input
 
         # Decode on GPU (mixed) + standard ImageNet-style aug
-        images = fn.decoders.image(images, device="mixed", output_type=types.RGB)
+        images = fn.decoders.image(images, 
+                                   device="mixed", 
+                                   output_type=types.RGB,
+                                   device_memory_padding=0,
+                                   host_memory_padding=0,
+                                  )
         images = fn.random_resized_crop(
             images,
             size=(224, 224),
         )
-        mirror = fn.random.coin_flip(probability=0.5)
-
         images = fn.crop_mirror_normalize(
             images,
             dtype=types.FLOAT,
             output_layout="CHW",
             mean=[0.485 * 255, 0.456 * 255, 0.406 * 255],
             std=[0.229 * 255, 0.224 * 255, 0.225 * 255],
-            mirror=mirror,
+            mirror=0,
         )
         return images, labels
 
@@ -69,7 +72,7 @@ class ValPipeline(Pipeline):
         shard_id,
         num_shards,
         base_seed=42,
-        prefetch_queue_depth=4,
+        prefetch_queue_depth=2,
     ):
         seed = int(base_seed) + int(shard_id)
         super().__init__(
@@ -97,8 +100,13 @@ class ValPipeline(Pipeline):
     def define_graph(self):
         images, labels = self.input
 
-        images = fn.decoders.image(images, device="mixed", output_type=types.RGB)
-        images = fn.resize(images, resize_shorter=256)
+        images = fn.decoders.image(images, 
+                                   device="mixed", 
+                                   output_type=types.RGB,
+                                   device_memory_padding=0,
+                                   host_memory_padding=0,
+                                  )
+        images = fn.resize(images, resize_x=224, resize_y=224)
         images = fn.crop_mirror_normalize(
             images,
             dtype=types.FLOAT,

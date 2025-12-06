@@ -4,7 +4,7 @@ size: 'B'
 data:
   img_size: 224
   patch_size: 16
-  train: 'Data/train_expanded.txt'
+  train: 'Data/train.txt'
   val: 'Data/val.txt'
 
 vit:
@@ -30,14 +30,14 @@ memory_bank:
   device: 0
 
 hyperparameters:
-  nosim_train_epochs: 1600
+  nosim_train_epochs: 0
   memory_mode: "random"
   num_neighbors: 10
 
 training:
   batch_size: 128
   max_epochs: 1600
-  val_every_epochs: 1
+  val_every_epochs: 50
   accumulate_grad_batches: 4
 
 optimizer:
@@ -58,7 +58,7 @@ checkpoint:
 logging:    
   project: 'memomae'
   entity: 'wwy'
-  log_every_epochs: 1
+  log_every_epochs: 100
   logger: 'wandb'
 
 linearprobing:

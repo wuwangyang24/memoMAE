@@ -112,46 +112,46 @@ class LightningModel(pl.LightningModule):
                         {f"reconstructions": wandb.Image(grid), "epoch": self.current_epoch}
                     )
             # store latents for linear probing (main GPU only)
-            self.feats_val.append(latents.mean(1))
-            self.labels_val.append(labels.squeeze(1).to(torch.long))
+            # self.feats_val.append(latents.mean(1))
+            # self.labels_val.append(labels.squeeze(1).to(torch.long))
        
-    def on_validation_epoch_end(self):
-        # Only main GPU
-        if not self.trainer.is_global_zero:
-            return
-        nosim_train = self.current_epoch < self.nosim_train_epochs
-        num_sim_patches = 0 if nosim_train else self.num_sim_patches
-        self.print(f"[rank0] Preparing latents for training linear prober at epoch {self.current_epoch}...")
-        train_loader = self.trainer.datamodule.train_dataloader()
-        self.model.eval()
-        with torch.no_grad():
-            for batch in tqdm(train_loader):
-                x = batch[0]["images"].to(self.device, non_blocking=True)
-                y = batch[0]["labels"]
-                feats = self.model.forward_encoder_memo(
-                    x,
-                    mask_ratio=0,                   # all patches visible
-                    k_sim_patches=num_sim_patches,
-                    memorize=False                  # memory bank is frozen
-                )[0]
-                self.feats_train.append(feats.mean(1).cpu())
-                self.labels_train.append(y.squeeze(1).long().cpu())
+    # def on_validation_epoch_end(self):
+    #     # Only main GPU
+    #     if not self.trainer.is_global_zero:
+    #         return
+    #     nosim_train = self.current_epoch < self.nosim_train_epochs
+    #     num_sim_patches = 0 if nosim_train else self.num_sim_patches
+    #     self.print(f"[rank0] Preparing latents for training linear prober at epoch {self.current_epoch}...")
+    #     train_loader = self.trainer.datamodule.train_dataloader()
+    #     self.model.eval()
+    #     with torch.no_grad():
+    #         for batch in tqdm(train_loader):
+    #             x = batch[0]["images"].to(self.device, non_blocking=True)
+    #             y = batch[0]["labels"]
+    #             feats = self.model.forward_encoder_memo(
+    #                 x,
+    #                 mask_ratio=0,                   # all patches visible
+    #                 k_sim_patches=num_sim_patches,
+    #                 memorize=False                  # memory bank is frozen
+    #             )[0]
+    #             self.feats_train.append(feats.mean(1).cpu())
+    #             self.labels_train.append(y.squeeze(1).long().cpu())
             
-        acc = linear_probing(
-            train_feats=self.feats_train, 
-            train_labels=self.labels_train,
-            val_feats=self.feats_val,
-            val_labels=self.labels_val,
-            batch_size=self.lp_batch_size,
-            device=self.lp_device
-        )
-        self.log("linear_probing_acc", acc, prog_bar=True)
+    #     acc = linear_probing(
+    #         train_feats=self.feats_train, 
+    #         train_labels=self.labels_train,
+    #         val_feats=self.feats_val,
+    #         val_labels=self.labels_val,
+    #         batch_size=self.lp_batch_size,
+    #         device=self.lp_device
+    #     )
+    #     self.log("linear_probing_acc", acc, prog_bar=True)
 
-        # reset buffers
-        self.feats_val = []
-        self.labels_val = []
-        self.feats_train = []
-        self.labels_train = []
+    #     # reset buffers
+    #     self.feats_val = []
+    #     self.labels_val = []
+    #     self.feats_train = []
+    #     self.labels_train = []
 
     def configure_optimizers(self) -> Dict[str, Any]:
         # ---- compute steps ----
