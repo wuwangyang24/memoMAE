@@ -60,12 +60,12 @@ class AsymBlock(nn.Module):
         if sim_embeddings is not None:
             sim_embeddings = self.norm1(sim_embeddings)
         if return_attn:
-            out, attn = self.attn(self.norm1(x), mask, sim_embeddings, return_attn=True)
+            out, sim_embeddings, attn = self.attn(self.norm1(x), mask, sim_embeddings, return_attn=True)
             x = x + self.drop_path(out)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
-            return x, attn
+            return x, sim_embeddings, attn
         else:
-            x = x + self.drop_path(self.attn(self.norm1(x), mask, sim_embeddings, return_attn=False))
+            out, sim_embeddings = self.attn(self.norm1(x), mask, sim_embeddings, return_attn=False)
+            x = x + self.drop_path(out)
             x = x + self.drop_path(self.mlp(self.norm2(x)))
-            return x
-        return x
+            return x, sim_embeddings

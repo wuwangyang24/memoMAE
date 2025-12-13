@@ -74,9 +74,9 @@ class memoMAE(MaskedAutoencoderViT):
         attn = None
         for blk in self.blocks:
             if return_attn:
-                x, attn = blk(x, sim_embeddings=sim_patch_embeds, return_attn=True)
+                x, sim_patch_embeds, attn = blk(x, sim_embeddings=sim_patch_embeds, return_attn=True)
             else:
-                x = blk(x, sim_embeddings=sim_patch_embeds, return_attn=False)
+                x, sim_patch_embeds = blk(x, sim_embeddings=sim_patch_embeds, return_attn=False)
         x = self.norm(x)
         if attn is not None:
             return x, mask, ids_restore, attn

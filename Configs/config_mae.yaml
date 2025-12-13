@@ -26,18 +26,18 @@ vit:
 memory_bank:
   memory_capacity: 100000
   embed_dim: 768
-  normalize: True
+  normalize: False
   device: 0
 
 hyperparameters:
   nosim_train_epochs: 0
   memory_mode: "random"
-  num_neighbors: 10
+  num_neighbors: 5
 
 training:
-  batch_size: 128
+  batch_size: 96
   max_epochs: 1600
-  val_every_epochs: 50
+  val_every_epochs: 10
   accumulate_grad_batches: 4
 
 optimizer:

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import xformers.ops as xops
 
 
 class AsymAttention(nn.Module):
@@ -18,7 +19,6 @@ class AsymAttention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
         self.scale = self.head_dim ** -0.5
-        # self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.q = nn.Linear(dim, dim, bias=qkv_bias)
         self.k = nn.Linear(dim, dim, bias=qkv_bias)
         self.v = nn.Linear(dim, dim, bias=qkv_bias)
@@ -85,8 +85,137 @@ class AsymAttention(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
         if return_attn:
-            return x, attn
-        return x
+            return x, None, attn
+        return x, None
+
+    # def forward_partial_asym(self, x, mask, sim_embeddings, return_attn: bool = False):  
+    #     """
+    #     Partial multiheaded attention
+    #     Args:
+    #         x: input features with shape (B, N, D)
+    #         sim_embeddings: similar embeddings with shape (B, N, M, D)
+    #         return_attn: if True, would return attention weights (NOT supported here)
+    #     Returns:
+    #         output_x: (B, N, D)
+    #         output_sim: (B, N, M, D)
+    #     """
+    #     B, N, D = x.shape
+    #     _, _, M, _ = sim_embeddings.shape
+    #     L = M + N
+    #     x_sim = torch.cat((x.unsqueeze(2).expand(B, N, N, D), sim_embeddings), dim=2) # (B, N, M+N, D)
+    
+    #     # Project Q, K, V
+    #     # q, k ,v: (B*N, N+M, H, Dh)
+    #     q = self.q(x).reshape(B, N, self.num_heads, self.head_dim).permute(0, 2, 1, 3) # (B, H, N, Dh)
+    #     k = self.k(x_sim).reshape(B, N, L, self.num_heads, self.head_dim).permute(0, 3, 1, 2, 4) # (B, H, N, L, Dh)
+    #     v = self.v(x_sim).reshape(B, N, L, self.num_heads, self.head_dim).permute(0, 3, 1, 2, 4) # (B, H, N, L, Dh)
+
+    #     scores = torch.einsum('bhnd,bhnld->bhnl', q, k) * self.scale
+    #     scores = torch.softmax(scores, dim=-1) # (B, H, N, L)
+    #     out = torch.einsum('bhnl,bhnld->bhnd', scores, v)  # (B, H, N, Dh)
+    #     out = out.permute(0, 2, 1, 3).reshape(B, N, D)
+    #     sim_out = v
+    #     return out, sim_out
+
+    def forward_partial(self, x, mask, sim_embeddings, return_attn: bool = False):  
+        """
+        Partial multiheaded attention
+        Args:
+            x: input features with shape (B, N, D)
+            sim_embeddings: similar embeddings with shape (B, N, M, D)
+            return_attn: if True, would return attention weights (NOT supported here)
+        Returns:
+            output_x: (B, N, D)
+            output_sim: (B, N, M, D)
+        """
+        B, N, D = x.shape
+        _, _, M, _ = sim_embeddings.shape
+        BN = B*N
+        MN = M + N
+        x = x.unsqueeze(1).expand(B, N, N, D)
+        x = torch.cat((x, sim_embeddings), dim=2)
+        x = x.reshape(BN, MN, D)
+        # ---- Project Q, K, V ---- #
+        # q, k ,v: (B*N, N+M, H, Dh)
+        q = self.q(x).reshape(BN, MN, self.num_heads, self.head_dim)
+        k = self.k(x).reshape(BN, MN, self.num_heads, self.head_dim)
+        v = self.v(x).reshape(BN, MN, self.num_heads, self.head_dim)
+        
+        # xFormers memory-efficient attention:
+        # output shape: (B*N, N+M, H, Dh)
+        # We can pass scale instead of manually scaling q
+        out = xops.memory_efficient_attention(
+            q, k, v,
+            attn_bias=None,
+            p=0.,
+            scale=self.scale,
+        )
+        # ---- Merge heads: (B*N, N+M, H, Dh) -> (B, N, N+M, D) ---- #
+        out = out.reshape(BN, MN, D)
+        # Final projection
+        out = self.proj(out)
+        out = self.proj_drop(out)
+        # ---- Split back into x and sim_embeddings ---- #
+        out = out.reshape(B, N, MN, D)
+        idx = torch.arange(N, device=x.device) 
+        x_out = out[:, idx, idx] # (B, N, D)
+        sim_out = out[:, :, N:]  # (B, N, M, D)
+        return x_out, sim_out
+
+    # def forward_full(self, x, mask, sim_embeddings, return_attn: bool = False):
+    #     """
+    #     Multi-head self-attention forward function using xFormers memory_efficient_attention.
+    #     Args:
+    #         x: input features with shape (B, N, D)
+    #         sim_embeddings: similar embeddings with shape (B, N, M, D)
+    #         return_attn: if True, would return attention weights (NOT supported here)
+    #     Returns:
+    #         output_x: (B, N, D)
+    #         output_sim: (B, N, M, D)
+    #     """
+    #     if return_attn:
+    #         raise NotImplementedError(
+    #             "xFormers memory_efficient_attention does not return the full "
+    #             "attention matrix. Use the standard attention path if you need attn."
+    #         )
+    #     B, N, D = x.shape
+    #     _, _, M, _ = sim_embeddings.shape
+    #     NM = N + N * M
+
+    #     # Concatenate x and sim_embeddings along sequence dimension
+    #     # x_cat: (B, NM, D)
+    #     x_cat = torch.cat([x, sim_embeddings.reshape(B, N * M, D)], dim=1)
+    
+    #     # Project Q, K, V
+    #     # q, k, v: (B, NM, H, Dh)
+    #     q = self.q(x_cat).reshape(B, NM, self.num_heads, self.head_dim)
+    #     k = self.k(x_cat).reshape(B, NM, self.num_heads, self.head_dim)
+    #     v = self.v(x_cat).reshape(B, NM, self.num_heads, self.head_dim)
+    
+    #     # xFormers memory-efficient attention:
+    #     # output shape: (B, NM, H, Dh)
+    #     # We can pass scale instead of manually scaling q
+    #     attn_dropout_p = self.attn_drop.p if self.training else 0.0
+    #     out = xops.memory_efficient_attention(
+    #         q, k, v,
+    #         attn_bias=None,
+    #         p=attn_dropout_p,
+    #         scale=self.scale,  # typically 1/sqrt(Dh)
+    #     )
+    
+    #     # Merge heads: (B, NM, H, Dh) -> (B, NM, D)
+    #     out = out.reshape(B, NM, D)
+    
+    #     # Final projection
+    #     out = self.proj(out)
+    #     out = self.proj_drop(out)
+    
+    #     # Split back into x and sim_embeddings
+    #     sim_out = out[:, N:, :].reshape(B, N, M, D)
+    #     x_out = out[:, :N, :]
+    
+    #     return x_out, sim_out
+
 
     def forward_asym(self, x, mask, sim_embeddings, return_attn: bool = False):
         '''
@@ -131,7 +260,7 @@ class AsymAttention(nn.Module):
             logits_sim = (q_sim.unsqueeze(3) * k_sim).sum(dim=-1) * self.scale  # (B, H, L, M)
             logits_sim = self._expand(mask, logits_sim, fill_value=float('-inf'))  # (B, H, N, M)
         else:
-            logits_sim = (q.unsqueeze(3) * k_sim).sum(dim=-1) * self.scale 
+            logits_sim = (q.unsqueeze(3) * k_sim).sum(dim=-1) * self.scale
             
         # Combine: (B, H, N, N+M)
         logits = torch.cat([logits_self, logits_sim], dim=-1)
@@ -163,8 +292,8 @@ class AsymAttention(nn.Module):
         out = self.proj(out)
         out = self.proj_drop(out)
         if return_attn:
-            return out, attn
-        return out
+            return out, v_sim.permute(0, 2, 3, 1, 4).reshape(B, L, M, D), attn
+        return out, v_sim.permute(0, 2, 3, 1, 4).reshape(B, L, M, D)
     
     def forward(self, x, mask=None, sim_embeddings=None, return_attn: bool = False):
         '''
@@ -178,7 +307,7 @@ class AsymAttention(nn.Module):
             output features with shape (B, N, D)
         '''
         if sim_embeddings is not None:
-            return self.forward_asym(x, mask, sim_embeddings, return_attn)
+            return self.forward_partial(x, mask, sim_embeddings, return_attn)
         else:
             return self.forward_base(x, return_attn)
 
